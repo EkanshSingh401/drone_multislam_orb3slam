@@ -409,6 +409,100 @@ Upstream's test code is untouched.
 
 ---
 
+# Findings that are upstream bugs, not porting issues
+
+The three items below were found by running the stack, not by reading it. Each
+one independently prevents the single-UAV RGB-D path from working, on any host.
+
+## 20. Gazebo systems come from the server config, not the world SDF
+
+*File: `docker/scripts/bringup_sim.sh`*
+
+A bare `gz sim -s forest.sdf` brings up the world and the drone, and everything
+*looks* healthy — but no camera topics ever appear. The reason:
+`grep -c "<plugin" forest.sdf` is **0**. PX4's world SDFs declare no systems at
+all; every system, including `gz-sim-sensors-system` (which is what renders the
+cameras), comes from `GZ_SIM_SERVER_CONFIG_PATH`.
+
+PX4 generates the correct environment at build time, so the bringup now sources
+`build/px4_sitl_default/rootfs/gz_env.sh`, which sets
+`GZ_SIM_RESOURCE_PATH`, `GZ_SIM_SYSTEM_PLUGIN_PATH` (without which the model
+logs `Failed to load system plugin [MotorFailurePlugin]`) and
+`GZ_SIM_SERVER_CONFIG_PATH`. The repo's README does not mention any of this
+because it assumes PX4 launches Gazebo itself.
+
+## 21. The depth camera's topic is overridden — upstream bridged the wrong name
+
+*File: `multi_slam/config/gz_bridge.yaml`*
+
+Upstream bridges depth from
+`/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/depth_image`.
+**Nothing ever publishes there.** The OakD-Lite SDF contains an explicit
+`<topic>depth_camera</topic>` for that sensor, which overrides the scoped name.
+Gazebo says so plainly at `-v 4`:
+
+```
+[DepthCameraSensor.cc:283] Depth images for [..::StereoOV7251] advertised on [depth_camera]
+[DepthCameraSensor.cc:311] Points      for [..::StereoOV7251] advertised on [depth_camera/points]
+[CameraSensor.cc:695]      Camera info for [..::StereoOV7251] advertised on [/camera_info]
+```
+
+This is a nasty failure mode: the scoped topic *does* show up in `gz topic -l`,
+because the bridge subscribes to it — so it looks like it exists. Only
+`gz topic -i` reveals `No publishers on topic [...]` alongside the bridge's two
+subscribers. The RGB camera has no `<topic>` override, which is why RGB worked
+and depth did not.
+
+Corrected to `/depth_camera`, `/camera_info`, `/depth_camera/points`. Verified:
+`gz topic -e -t /depth_camera` returns `width: 640, height: 480,
+pixel_format_type: R_FLOAT32`, which matches `DepthMapFactor: 1.0` (metres) in
+`gazebo_rgbd.yaml`.
+
+**Carry-over for multi-UAV:** these names are unscoped, so every drone's depth
+camera would publish on the *same* `/depth_camera`. That must be resolved before
+adding a second agent.
+
+## 22. RGB and depth cameras have incompatible geometry
+
+*File: `docker/sim/Dockerfile` (patches the pinned PX4-gazebo-models OakD-Lite model)*
+
+| Sensor | Type | Resolution | horizontal_fov |
+|---|---|---|---|
+| IMX214 | `camera` | **1920×1080** | 1.204 |
+| StereoOV7251 | `depth_camera` | 640×480 | 1.274 |
+
+Meanwhile `gazebo_rgbd.yaml` declares `Camera.width: 640`, `Camera.height: 480`,
+`fx: 432.496`, `cx: 320`, `cy: 240`. Those are the **depth** camera's intrinsics
+(640/2/tan(1.274/2) = 433.9), applied to the RGB stream. Verified by measurement:
+`ros2 topic echo /uav_1/rgb/image_raw --field width` returns **1920**.
+
+Nothing in the pipeline resizes — checked `rgbd-slam-node.cpp`,
+`orb_slam3_interface.cpp` and `scripts/sync_repub.py` (the last is a stereo
+stamp-synchroniser that republishes unchanged).
+
+As committed this cannot work: ORB-SLAM3's RGB-D path indexes the depth image at
+the grayscale image's pixel coordinates, so a 1920×1080 RGB against a 640×480
+depth map reads out of bounds, and the declared intrinsics are wrong for the RGB
+frame regardless of that.
+
+Fixed by setting IMX214 to 640×480 with `horizontal_fov` 1.274, so the RGB
+stream matches both the depth camera and the repo's own committed calibration.
+Applied in the Dockerfile because the model belongs to the pinned
+PX4-gazebo-models submodule rather than to this repo.
+
+Measured side effect on this host (no GPU, Mesa llvmpipe):
+
+| | before (1920×1080) | after (640×480) |
+|---|---|---|
+| Gazebo real-time factor | 0.028 | ~0.6 (oscillating 0.07–1.0) |
+| `/uav_1/rgb/image_raw` | 1.53 Hz | 8.38 Hz |
+
+So the correctness fix is also what makes this tractable without a GPU. The
+resolution change is nonetheless a deviation from the model as pinned, and is
+flagged as such.
+
+---
+
 ## Pinned versions, for the record
 
 | Component | Version / commit | How it was determined |

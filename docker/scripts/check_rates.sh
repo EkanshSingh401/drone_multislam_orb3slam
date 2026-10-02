@@ -8,7 +8,7 @@
 #   4. whether the COVINS backend is reachable and receiving keyframes
 #
 # Nothing here is inferred from configuration -- every number is measured.
-set -uo pipefail
+set -o pipefail    # no -u: ROS setup.bash reads unset vars
 
 WORLD="${WORLD:-forest}"
 NAMESPACE="${NAMESPACE:-uav_1}"

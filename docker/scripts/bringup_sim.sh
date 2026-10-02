@@ -7,7 +7,7 @@
 #
 # Usage:  /opt/scripts/bringup_sim.sh [--world forest] [--namespace uav_1]
 #         /opt/scripts/bringup_sim.sh --stop
-set -euo pipefail
+set -eo pipefail   # no -u: ROS setup.bash reads unset vars
 
 WORLD="${WORLD:-forest}"
 NAMESPACE="${NAMESPACE:-uav_1}"
@@ -41,9 +41,33 @@ mkdir -p "${LOGDIR}"
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 source "${WS}/install/setup.bash"
 
-# PX4's gz models/worlds (x500_depth, forest.sdf) live in the PX4-gazebo-models
-# submodule; gz needs them on its resource path.
-export GZ_SIM_RESOURCE_PATH="${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
+# Gazebo environment. PX4 generates exactly the right one at build time, so
+# source that rather than hand-rolling it. It sets three things that all matter:
+#
+#   GZ_SIM_RESOURCE_PATH      models (x500_depth) + worlds (forest.sdf)
+#   GZ_SIM_SYSTEM_PLUGIN_PATH PX4's own gz plugins (GstCamera, OpticalFlow,
+#                             MotorFailure, ...) -- without it the model SDF
+#                             logs "Failed to load system plugin
+#                             [MotorFailurePlugin]: Could not find shared library"
+#   GZ_SIM_SERVER_CONFIG_PATH the server config listing the Gazebo systems
+#
+# That last one is essential and easy to miss: PX4's world SDFs contain ZERO
+# <plugin> entries (verified: `grep -c "<plugin" forest.sdf` == 0), so every
+# system -- including gz-sim-sensors-system, which is what actually renders the
+# RGB and depth cameras -- comes from the server config. Running a bare
+# `gz sim -s forest.sdf` loads the stock config instead, the Sensors system
+# never starts, and no camera topics are ever created. The world and the drone
+# come up looking perfectly healthy, which makes this a confusing failure.
+GZ_ENV="${PX4_DIR}/build/px4_sitl_default/rootfs/gz_env.sh"
+if [[ -f "${GZ_ENV}" ]]; then
+    # shellcheck disable=SC1090
+    source "${GZ_ENV}"
+else
+    echo "[bringup] WARNING ${GZ_ENV} not found; falling back to manual paths" >&2
+    export GZ_SIM_RESOURCE_PATH="${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
+    export GZ_SIM_SYSTEM_PLUGIN_PATH="${PX4_DIR}/build/px4_sitl_default/src/modules/simulation/gz_plugins"
+    export GZ_SIM_SERVER_CONFIG_PATH="${PX4_DIR}/src/modules/simulation/gz_bridge/server.config"
+fi
 
 log()  { echo "[bringup $(date +%H:%M:%S)] $*"; }
 fail() { echo "[bringup] FAILED: $*" >&2; exit 1; }
@@ -65,7 +89,12 @@ wait_for() {  # wait_for <description> <timeout_s> <command...>
 # headless requirement, and it is also why PX4 runs with PX4_GZ_STANDALONE=1
 # below (PX4 must not try to start its own Gazebo).
 log "starting Gazebo server (world=${WORLD}, headless)"
-nohup gz sim -s -r -v 2 "${WORLD}.sdf" > "${LOGDIR}/gz_server.log" 2>&1 &
+log "  server config: ${GZ_SIM_SERVER_CONFIG_PATH:-<stock>}"
+# --headless-rendering makes the Sensors system render offscreen, which is what
+# we want with no GPU passthrough (it still goes through Mesa llvmpipe; the
+# container provides OpenGL 4.5 via Xvfb on $DISPLAY as a fallback).
+nohup gz sim -s -r -v 2 --headless-rendering --render-engine ogre2 \
+    "${WORLD}.sdf" > "${LOGDIR}/gz_server.log" 2>&1 &
 wait_for "gz world '${WORLD}' is up" 120 \
     bash -c "gz topic -l 2>/dev/null | grep -q '^/world/${WORLD}/'" \
     || { tail -30 "${LOGDIR}/gz_server.log"; fail "Gazebo server did not come up"; }

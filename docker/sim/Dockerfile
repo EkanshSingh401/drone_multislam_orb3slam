@@ -137,6 +137,54 @@ RUN cd ${PX4_DIR} && \
     echo "PX4 SITL binary built"
 
 # -----------------------------------------------------------------------------
+# 4b. Align the RGB camera with the depth camera (REQUIRED, not an optimisation)
+# -----------------------------------------------------------------------------
+# PX4-gazebo-models' OakD-Lite model gives the two sensors different geometry:
+#
+#   IMX214       (type camera)        1920x1080, horizontal_fov 1.204
+#   StereoOV7251 (type depth_camera)   640x480,  horizontal_fov 1.274
+#
+# But the repo's ORB-SLAM3 settings (orb_slam3_ros2_wrapper/params/
+# orb_slam3_params/gazebo_rgbd.yaml) declare 640x480 with fx=432.50, cx=320,
+# cy=240 -- i.e. the DEPTH camera's intrinsics (640/2/tan(1.274/2) = 433.9),
+# applied to the RGB stream.
+#
+# As committed, that combination cannot work: ORB-SLAM3's RGB-D path indexes the
+# depth image at the grayscale image's pixel coordinates, so a 1920x1080 RGB
+# against a 640x480 depth map reads out of bounds, and the declared intrinsics
+# are wrong for the RGB frame regardless.
+#
+# Setting IMX214 to 640x480 with horizontal_fov 1.274 makes the RGB stream match
+# both the depth camera and the repo's own committed calibration. It also
+# happens to be what makes this tractable without a GPU: measured on this host,
+# Gazebo's real-time factor went from ~0.028 to ~0.6-1.0 and the RGB rate from
+# 1.5 Hz to 8.4 Hz, purely from dropping 1920x1080 -> 640x480 under llvmpipe.
+#
+# Done here (rather than in the repo) because the model belongs to the pinned
+# PX4-gazebo-models submodule. Recorded in docker/PATCHES.md.
+#
+# The 1920x1080 / 1.204 values are unique to the IMX214 (RGB) block --
+# StereoOV7251 is already 640x480 / 1.274 -- so plain substitutions are
+# unambiguous. Each one is asserted afterwards so a future PX4-gazebo-models
+# layout change fails the build loudly instead of silently reverting to
+# 1920x1080 (which would look fine until ORB-SLAM3 read the depth map out of
+# bounds).
+RUN set -eux; \
+    M="${PX4_DIR}/Tools/simulation/gz/models/OakD-Lite/model.sdf"; \
+    cp "$M" "$M.orig"; \
+    sed -i \
+        -e 's|<horizontal_fov>1.204</horizontal_fov>|<horizontal_fov>1.274</horizontal_fov>|' \
+        -e 's|<width>1920</width>|<width>640</width>|' \
+        -e 's|<height>1080</height>|<height>480</height>|' \
+        "$M"; \
+    grep -q '1.204' "$M" && { echo "IMX214 hfov not patched"; exit 1; } || true; \
+    grep -q '<width>1920</width>' "$M" && { echo "IMX214 width not patched"; exit 1; } || true; \
+    test "$(grep -c '<width>640</width>' "$M")" = "2"; \
+    test "$(grep -c '<height>480</height>' "$M")" = "2"; \
+    test "$(grep -c '<horizontal_fov>1.274</horizontal_fov>' "$M")" = "2"; \
+    echo "OakD-Lite: RGB and depth cameras now share 640x480 / hfov 1.274"
+
+# -----------------------------------------------------------------------------
 # 5. Repository sources
 # -----------------------------------------------------------------------------
 COPY . ${WS}/src/

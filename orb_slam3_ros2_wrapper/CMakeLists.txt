@@ -175,7 +175,24 @@ if(ORB_SLAM3_ROS2_WRAPPER_ENABLE_CUDA)
 endif()
 
 
-install(TARGETS orb_slam3_ros2_wrapper_common rgbd rgbd_imu mono_imu stereo
+# Libraries and executables must go to DIFFERENT destinations.
+#
+# ament puts <prefix>/lib on the runtime library path, but NOT
+# <prefix>/lib/<project>, which is where `ros2 run` looks for executables.
+# Installing the shared library alongside the executables (as a single
+# install(TARGETS ...) DESTINATION lib/${PROJECT_NAME} does) leaves it off the
+# loader path, and the node dies at startup with:
+#
+#   rgbd: error while loading shared libraries:
+#   liborb_slam3_ros2_wrapper_common.so: cannot open shared object file
+#
+# So: library -> lib/, executables -> lib/${PROJECT_NAME}.
+install(TARGETS orb_slam3_ros2_wrapper_common
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin)
+
+install(TARGETS rgbd rgbd_imu mono_imu stereo
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch params

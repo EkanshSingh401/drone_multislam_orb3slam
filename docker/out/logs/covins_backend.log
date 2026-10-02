@@ -1,0 +1,137 @@
++++ COVINS Back-End +++
+++++++++++ System ++++++++++
+server_ip: covins-backend
+port: 9033
+
+++++++++++ Communication ++++++++++
+send_updates: 1
+data_to_client: 0
+start_sending_after_kf: 5
+kf_buffer_withold: 5
+max_sent_kfs_per_iteration: 2
+update_window_size: 5
+to_agent_freq: 5
+++++++++++ ORB-SLAM3 ++++++++++
+activate_visualization: 0
+imu_stamp_max_diff: 2
+
+++++++++++ System ++++++++++
+threads_server: 8
+covis_thres: 10
+map_path0: /root/covins_ws/src/covins/covins_backend/output/map_data
+map_path1: 
+map_path2: 
+map_path3: 
+map_path4: 
+map_path5: 
+map_path6: 
+map_path7: 
+map_path8: 
+map_path9: 
+map_path10: 
+map_path11: 
+--------------------------
+ORB Voc dir: /root/covins_ws/src/covins/covins_backend/config/ORBvoc.txt
+--------------------------
+output_dir: /root/covins_ws/src/covins/covins_backend/output/
+trajectory_format: TUM
+
+++++++++++ Feature Extraction ++++++++++
+feature type: ORB
+desc_length: 32
+num_octaves: 1
+scale_factor: 2
+++++++++++ Feature Matching ++++++++++
+desc_matching_th_low: 50
+desc_matching_th_high: 100
+search_radius_SE3: 9.5
+search_radius_proj: 10
+search_radius_fuse: 10
+image_matching_threshold (COVINS_G): 40
+ratio_threshold (COVINS_G): 0.8
+++++++++++ Mapping ++++++++++
+activate_lm_culling: 1
+kf_culling_th_red: 0.95
+kf_culling_max_time_dist: 1
+++++++++++ Place Rec ++++++++++
+active: 1
+type: [1;32mCOVINS[0m
+start_after_kf: 5
+consecutive_loop_dist: 5
+min_loop_dist: 100
+cov_consistency_thres: 2
+matches_thres: 18
+inliers_thres: 12
+total_matches_thres: 25
+matches_thres_merge: 15
+inter_map_matches_only: 1
+exclude_kfs_with_id_less_than: 5
+--- RANSAC ---
+min_inliers: 6
+probability: 0.99
+max_iterations: 500
+class_threshold: 35
+-- COVINS_G Parameters --
+--- Non-Central Rel Pose ---
+non_central_rel_pose_rep_err: 1.5
+non_central_rel_pose_rep_err_cov: 10
+non_central_rel_pose_min_inliers: 100
+non_central_rel_pose_max_iters: 4000
+non_central_rel_pose_cov_thres: 10
+non_central_rel_pose_cov_iters: 30
+non_central_rel_pose_cov_max_iters: 300
+--- Rel Pose ---
+rel_pose_err_thres: 16
+rel_pose_min_inliers: 20
+rel_pose_max_iters: 200
+rel_pose_min_img_matches: 20
+--- Loop Thresholds ---
+max yaw (deg): 50
+max trans (m): 2
+++++++++++ Opt ++++++++++
+gba_iteration_limit: 10
+th_outlier_align: 1.3
+th_gba_outlier_global: 0.92
+pgo_iteration_limit: 10
+gba_use_map_loop_constraints: 1
+perform_pgo: 1
+pgo_use_neighbor_kfs: 1
+pgo_use_robust_loss: 1
+pgo_fix_kfs_after_gba: 1
+pgo_fix_poses_loaded_maps: 0
+gba_fix_poses_loaded_maps: 0
+++++++++++ Vis ++++++++++
+active: 1
+showcovgraph: 1
+showlandmarks: 1
+showtraj: 1
+showkeyframes: 1
+covgraph_minweight: 10
+covgraph_shared_edges_only: 1
+scalefactor: 1
+trajmarkersize: 0.08
+covmarkersize: 0.008
+loopmarkersize: 0.05
+camsize: 0.1
+camlinesize: 0.01
+
+++++++++++ Colors [R|G|B] ++++++++++
+0: 0.55|0.83|0.78
+1: 1|1|0.7
+2: 0.75|0.73|0.85
+3: 0.98|0.5|0.45
+4: 0.5|0.69|0.83
+5: 0.99|0.71|0.38
+6: 0.7|0.87|0.41
+7: 0.99|0.8|0.9
+8: 0.85|0.85|0.85
+9: 0.74|0.5|0.74
+10: 0.8|0.92|0.77
+11: 1|0.93|0.44
+Covis: 0.6|0.6|0.6
+
+
+Loading ORB Vocabulary. This could take a while...
+Vocabulary loaded!
+
++++++ KeyFrame Database Initialized +++++

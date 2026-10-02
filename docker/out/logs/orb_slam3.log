@@ -1,0 +1,5 @@
+[INFO] [launch]: All log files can be found below /root/.ros/log/2026-10-02-22-34-45-244222-sim-853
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [rgbd-1]: process started with pid [861]
+[rgbd-1] /root/ws_offboard_control/install/orb_slam3_ros2_wrapper/lib/orb_slam3_ros2_wrapper/rgbd: error while loading shared libraries: liborb_slam3_ros2_wrapper_common.so: cannot open shared object file: No such file or directory
+[ERROR] [rgbd-1]: process has died [pid 861, exit code 127, cmd '/root/ws_offboard_control/install/orb_slam3_ros2_wrapper/lib/orb_slam3_ros2_wrapper/rgbd /root/ws_offboard_control/src/ORB_SLAM3/Vocabulary/ORBvoc.txt /root/ws_offboard_control/install/orb_slam3_ros2_wrapper/share/orb_slam3_ros2_wrapper/params/orb_slam3_params/gazebo_rgbd.yaml --ros-args -r __ns:=/uav_1 --params-file /tmp/tmprz0aq8ej'].

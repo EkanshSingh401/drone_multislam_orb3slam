@@ -3,7 +3,7 @@
 #
 #   /opt/scripts/run_backend.sh            # start the backend node
 #   /opt/scripts/run_backend.sh --rviz     # also start COVINS RViz on the VNC display
-set -euo pipefail
+set -eo pipefail   # no -u: ROS setup.bash reads unset vars
 
 CATKIN_WS="${CATKIN_WS:-/root/covins_ws}"
 LOGDIR="${LOGDIR:-/out/logs}"

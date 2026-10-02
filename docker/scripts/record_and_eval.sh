@@ -10,7 +10,7 @@
 #   gt.tum             Gazebo ground truth (from /ground_truth/pose_info)
 #   est_covins.tum     COVINS optimised keyframe trajectory, if exported
 #   ape_*.zip rpe_*.zip + *.txt   evo results
-set -uo pipefail
+set -o pipefail    # no -u: ROS setup.bash reads unset vars
 
 NAMESPACE="${NAMESPACE:-uav_1}"
 MODEL="${MODEL:-x500_depth_1}"

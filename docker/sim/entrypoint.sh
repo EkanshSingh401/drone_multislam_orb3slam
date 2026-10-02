@@ -3,7 +3,10 @@
 #  - sources ROS 2 + the colcon workspace
 #  - points the COVINS agent transport at the backend container
 #  - brings up a headless X server with VNC/noVNC for RViz
-set -euo pipefail
+# NOTE: deliberately no `set -u`. ROS 2's /opt/ros/<distro>/setup.bash reads
+# AMENT_TRACE_SETUP_FILES and friends without defaulting them, so `set -u`
+# aborts the entrypoint with "AMENT_TRACE_SETUP_FILES: unbound variable".
+set -eo pipefail
 
 ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 WS="${WS:-/root/ws_offboard_control}"

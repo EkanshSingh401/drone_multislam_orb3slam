@@ -3,7 +3,8 @@
 #  - sources ROS 1 + the catkin workspace
 #  - optionally starts roscore (the backend node needs a master)
 #  - brings up a headless X server with VNC/noVNC for COVINS RViz
-set -euo pipefail
+# No `set -u`: ROS setup.bash scripts read undefined variables internally.
+set -eo pipefail
 
 CATKIN_WS="${CATKIN_WS:-/root/covins_ws}"
 

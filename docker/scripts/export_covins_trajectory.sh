@@ -11,7 +11,7 @@
 #   /opt/scripts/export_covins_trajectory.sh            # visual GBA + outlier rejection
 #   /opt/scripts/export_covins_trajectory.sh --action 4 # visual GBA, no rejection
 #   /opt/scripts/export_covins_trajectory.sh --action 100 --map-id 0   # PGO instead
-set -euo pipefail
+set -eo pipefail   # no -u: ROS setup.bash reads unset vars
 
 CATKIN_WS="${CATKIN_WS:-/root/covins_ws}"
 OUTDIR="${CATKIN_WS}/src/covins/covins_backend/output"

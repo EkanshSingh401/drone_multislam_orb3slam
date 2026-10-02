@@ -19,21 +19,39 @@
   direction: GZ_TO_ROS
 
 # -------- Depth camera (StereoOV7251) --------
+# IMPORTANT: the depth sensor does NOT use the scoped
+# /world/<w>/model/<m>/link/<l>/sensor/<s>/... topic that the RGB camera uses.
+# Its SDF (PX4-gazebo-models OakD-Lite/model.sdf) contains an explicit
+# <topic>depth_camera</topic>, which OVERRIDES the scoped name. Gazebo confirms
+# this at -v 4:
+#   [DepthCameraSensor.cc:283] Depth images for [..::StereoOV7251]
+#                              advertised on [depth_camera]
+#   [DepthCameraSensor.cc:311] Points     for [..::StereoOV7251]
+#                              advertised on [depth_camera/points]
+#   [CameraSensor.cc:695]      Camera info for [..::StereoOV7251]
+#                              advertised on [/camera_info]
+# Bridging the scoped names instead yields a topic that exists in `gz topic -l`
+# (because the bridge itself subscribes) but has "No publishers" and never
+# delivers a single frame.
+#
+# NOTE for multi-UAV: because these names are unscoped, every drone's depth
+# camera publishes on the SAME /depth_camera topic. That has to be resolved
+# (e.g. per-model <topic> overrides) before adding a second agent.
 - ros_topic_name: "uav_1/depth/image"
-  gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/depth_image"
+  gz_topic_name: "/depth_camera"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "uav_1/depth/camera_info"
-  gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/camera_info"
+  gz_topic_name: "/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
 # PointCloud
 - ros_topic_name: "uav_1/depth/points"
-  gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/depth_image/points"
+  gz_topic_name: "/depth_camera/points"
   ros_type_name: "sensor_msgs/msg/PointCloud2"
   gz_type_name: "gz.msgs.PointCloudPacked"
   direction: GZ_TO_ROS
