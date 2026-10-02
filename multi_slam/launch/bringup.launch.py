@@ -74,7 +74,10 @@ def generate_launch_description():
                 [FindPackageShare("multi_slam"), "launch", "static_frames.launch.py"]
             )
         ),
-        launch_arguments={"robot_namespace": robot_namespace}.items(),
+        launch_arguments={
+            "robot_namespace": robot_namespace,
+            "use_sim_time": use_sim_time,
+        }.items(),
     )
 
     # Pass robot_namespace and use_sim_time through, otherwise the SLAM node

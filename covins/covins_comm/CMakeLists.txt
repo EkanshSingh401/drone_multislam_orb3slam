@@ -119,6 +119,16 @@ else()
         DESTINATION include
       )
 
+      # cereal is a PUBLIC dependency of the installed headers, not just an
+      # internal build detail: typedefs_base.hpp (pulled in by every covins
+      # header) does #include <cereal/cereal.hpp>. Without this, anything
+      # consuming the installed tree -- i.e. ORB-SLAM3 -- fails with
+      # "fatal error: cereal/cereal.hpp: No such file or directory".
+      # thirdparty/ is the include root, so cereal/ lands at <prefix>/include/cereal/.
+      install(DIRECTORY ${PROJECT_SOURCE_DIR}/thirdparty/
+        DESTINATION include
+      )
+
       # config_comm.hpp resolves its runtime YAML path at COMPILE time from
       # __FILE__, by stripping everything from "include/covins" onwards and
       # appending "config/config_comm.yaml". For installed headers at

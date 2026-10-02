@@ -1,0 +1,15 @@
+.git
+.gitignore
+media
+**/__pycache__
+# Committed x86-64 build output and CMake trees baked with absolute host paths.
+# These are purged inside the image anyway; excluding them keeps the build
+# context small and prevents a stale CMakeCache.txt from reaching the builder.
+ORB_SLAM3/build
+ORB_SLAM3/lib
+ORB_SLAM3/Thirdparty/DBoW2/build
+ORB_SLAM3/Thirdparty/DBoW2/lib
+ORB_SLAM3/Thirdparty/g2o/build
+ORB_SLAM3/Thirdparty/g2o/lib
+covins/covins_comm/build
+covins/covins_comm/lib

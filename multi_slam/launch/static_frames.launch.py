@@ -9,6 +9,7 @@ from launch_ros.actions import Node
 
 def _build_nodes(context):
     ns = LaunchConfiguration("robot_namespace").perform(context).strip()
+    use_sim_time = LaunchConfiguration("use_sim_time").perform(context)
     if ns == "":
         ns = "uav_1"
 
@@ -30,6 +31,7 @@ def _build_nodes(context):
         name=f"{ns}_base_to_camera_link_tf",
         output="screen",
         arguments=[x, y, z, roll, pitch, yaw, base_link, camera_link],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     # Optical convention: camera_link -> camera_optical_frame
@@ -43,6 +45,7 @@ def _build_nodes(context):
             "-1.57079632679", "0", "-1.57079632679",
             camera_link, camera_optical,
         ],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     map_to_world = Node(
@@ -55,6 +58,7 @@ def _build_nodes(context):
             "0", "0", "0",
             "map", "world",
         ],
+        parameters=[{"use_sim_time": use_sim_time}],
     )
 
     return [base_to_cam, cam_to_optical, map_to_world]
@@ -63,6 +67,11 @@ def _build_nodes(context):
 def generate_launch_description():
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "use_sim_time",
+                default_value="true",
+                description="Use the Gazebo /clock for the static TF publishers too",
+            ),
             DeclareLaunchArgument(
                 "robot_namespace",
                 default_value="uav_1",

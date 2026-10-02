@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Record a scripted flight and evaluate ATE/RPE with evo (run INSIDE the sim container).
+#
+#   /opt/scripts/record_and_eval.sh                # record + fly + evaluate
+#   /opt/scripts/record_and_eval.sh --eval-only DIR
+#
+# Produces, under /out/eval/<run>/:
+#   flight.bag/        rosbag2 recording
+#   est_orbslam3.tum   ORB-SLAM3 estimate  (from /uav_1/robot_pose_slam)
+#   gt.tum             Gazebo ground truth (from /ground_truth/pose_info)
+#   est_covins.tum     COVINS optimised keyframe trajectory, if exported
+#   ape_*.zip rpe_*.zip + *.txt   evo results
+set -uo pipefail
+
+NAMESPACE="${NAMESPACE:-uav_1}"
+MODEL="${MODEL:-x500_depth_1}"
+OUTROOT="${OUTROOT:-/out/eval}"
+SIDE="${SIDE:-5}"
+ALT="${ALT:-2.0}"
+LEG_TIME="${LEG_TIME:-12}"
+SETTLE="${SETTLE:-15}"       # seconds of hover before flying, to let SLAM initialise
+
+EVAL_ONLY=""
+[[ "${1:-}" == "--eval-only" ]] && EVAL_ONLY="${2:-}"
+
+source "/opt/ros/${ROS_DISTRO}/setup.bash"
+source "${WS:-/root/ws_offboard_control}/install/setup.bash"
+
+hr() { printf '%s\n' "============================================================"; }
+
+if [[ -n "${EVAL_ONLY}" ]]; then
+    RUNDIR="${EVAL_ONLY}"
+else
+    RUNDIR="${OUTROOT}/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "${RUNDIR}"
+
+    hr; echo "RECORDING + SCRIPTED FLIGHT -> ${RUNDIR}"; hr
+
+    # Sanity-check the inputs before flying, so a failed run is diagnosable.
+    for t in "/${NAMESPACE}/robot_pose_slam" "/ground_truth/pose_info"; do
+        if ! ros2 topic info "$t" >/dev/null 2>&1; then
+            echo "record_and_eval: required topic $t does not exist." >&2
+            echo "  Is the stack up? Run /opt/scripts/bringup_sim.sh first." >&2
+            exit 1
+        fi
+    done
+    if ! timeout 20 ros2 topic echo "/${NAMESPACE}/robot_pose_slam" --once >/dev/null 2>&1; then
+        echo "record_and_eval: WARNING no pose on /${NAMESPACE}/robot_pose_slam yet." >&2
+        echo "  ORB-SLAM3 has probably not initialised. Recording anyway, but the" >&2
+        echo "  estimate may be empty or start late." >&2
+    fi
+
+    echo "--> starting rosbag2"
+    ros2 bag record -s mcap -o "${RUNDIR}/flight.bag" \
+        "/${NAMESPACE}/robot_pose_slam" \
+        "/ground_truth/pose_info" \
+        /clock /tf /tf_static \
+        > "${RUNDIR}/rosbag.log" 2>&1 &
+    BAG_PID=$!
+    sleep 5
+
+    echo "--> hovering ${SETTLE}s to let ORB-SLAM3 initialise, then flying"
+    python3 /opt/scripts/fly_path.py \
+        --side "${SIDE}" --alt "${ALT}" \
+        --leg-time "${LEG_TIME}" --settle-time "${SETTLE}" \
+        2>&1 | tee "${RUNDIR}/fly_path.log"
+
+    echo "--> flight done; stopping bag"
+    sleep 3
+    kill -INT "${BAG_PID}" 2>/dev/null || true
+    wait "${BAG_PID}" 2>/dev/null || true
+    sleep 2
+fi
+
+BAG="${RUNDIR}/flight.bag"
+hr; echo "BAG CONTENTS"; hr
+python3 /opt/scripts/bag_to_tum.py "${BAG}" --list --out /dev/null || true
+
+hr; echo "EXTRACTING TRAJECTORIES (TUM)"; hr
+python3 /opt/scripts/bag_to_tum.py "${BAG}" \
+    --pose-topic "/${NAMESPACE}/robot_pose_slam" \
+    --out "${RUNDIR}/est_orbslam3.tum"
+EST_OK=$?
+
+python3 /opt/scripts/bag_to_tum.py "${BAG}" \
+    --tf-topic /ground_truth/pose_info --tf-child "${MODEL}" \
+    --out "${RUNDIR}/gt.tum"
+GT_OK=$?
+
+if [[ ${EST_OK} -ne 0 || ${GT_OK} -ne 0 ]]; then
+    echo "record_and_eval: could not extract both trajectories; stopping before evo." >&2
+    exit 4
+fi
+
+# -----------------------------------------------------------------------------
+# evo
+# -----------------------------------------------------------------------------
+# -a = SE(3) Umeyama alignment. Required, and not a thumb on the scale: the
+# ORB-SLAM3 map frame and the Gazebo world frame have different origins and
+# orientations, so an unaligned ATE would just measure that offset. Scale is NOT
+# estimated (-s omitted) because RGB-D SLAM is metric -- letting evo fit scale
+# would hide real scale error.
+run_evo() {  # run_evo <label> <est.tum>
+    local label="$1" est="$2"
+    [[ -s "${est}" ]] || { echo "  (no ${label} trajectory, skipping)"; return; }
+
+    hr; echo "ATE (evo_ape) -- ${label} vs ground truth"; hr
+    evo_ape tum "${RUNDIR}/gt.tum" "${est}" \
+        -a --t_max_diff 0.05 \
+        --save_results "${RUNDIR}/ape_${label}.zip" \
+        2>&1 | tee "${RUNDIR}/ape_${label}.txt"
+
+    hr; echo "RPE (evo_rpe) -- ${label}, 1 m delta"; hr
+    evo_rpe tum "${RUNDIR}/gt.tum" "${est}" \
+        -a --t_max_diff 0.05 --delta 1 --delta_unit m \
+        --save_results "${RUNDIR}/rpe_${label}.zip" \
+        2>&1 | tee "${RUNDIR}/rpe_${label}.txt"
+}
+
+run_evo "orbslam3" "${RUNDIR}/est_orbslam3.tum"
+
+# -----------------------------------------------------------------------------
+# COVINS optimised trajectory
+# -----------------------------------------------------------------------------
+# The backend writes <output_dir>/KF_<client_id>_ftum.csv in TUM format
+# (sys.trajectory_format: 'TUM'), via Map::WriteKFsToFile(). Export it with
+# /opt/scripts/export_covins_trajectory.sh in the backend container first; this
+# picks it up from the shared /out mount.
+hr; echo "COVINS OPTIMISED TRAJECTORY"; hr
+COVINS_TUM="$(ls /out/covins/KF_*_ftum.csv 2>/dev/null | head -1)"
+if [[ -n "${COVINS_TUM}" ]]; then
+    echo "found ${COVINS_TUM}"
+    # Strip any header/comment lines; evo wants bare numeric rows.
+    grep -E '^[-0-9]' "${COVINS_TUM}" | tr ',' ' ' > "${RUNDIR}/est_covins.tum"
+    echo "  $(wc -l < "${RUNDIR}/est_covins.tum") keyframe poses"
+    run_evo "covins" "${RUNDIR}/est_covins.tum"
+else
+    echo "No COVINS trajectory found at /out/covins/KF_*_ftum.csv."
+    echo "Export it from the backend container:"
+    echo "  docker compose exec covins-backend /opt/scripts/export_covins_trajectory.sh"
+    echo "(COVINS only writes keyframes it actually received -- check keyframe"
+    echo " receipt first, and remember comm.start_sending_after_kf delays it.)"
+fi
+
+hr; echo "RESULTS IN ${RUNDIR}"; hr
+ls -la "${RUNDIR}"

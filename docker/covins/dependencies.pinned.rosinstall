@@ -1,0 +1,118 @@
+# Pinned mirror of covins/dependencies.rosinstall.
+#
+# WHY: the upstream file pins only two entries (pangolin by SHA, robopt_open by
+# branch) and leaves the other fifteen tracking their default branch, so
+# `wstool up` resolves to whatever HEAD happens to be on the day you build.
+# Every commit below is that repository's default-branch HEAD as of
+# 2026-02-24, the date of the repo's "Changes for communication problems and
+# Successful Covins integration" commit (bbea776) -- i.e. the dependency state
+# the author would have gotten when COVINS last worked for them.
+#
+# In practice these repos are dormant (newest commit 2023-11-13), so pinning
+# as-of that date resolves to current HEAD for all of them. The pins exist to
+# keep the build reproducible, not to roll anything back.
+#
+# Audited for x86-only code: the only SIMD sites in this dependency graph are
+# aslam_cv2's aslam/common/hamming{,-inl}.h, which already select a NEON
+# implementation via the compiler-predefined __ARM_NEON. Nothing here needs an
+# architecture patch.
+
+- git:
+    local-name: catkin_simple
+    uri: https://github.com/catkin/catkin_simple.git
+    version: 0e62848b12da76c8cc58a1add42b4f894d1ac21e
+
+- git:
+    local-name: eigen_catkin
+    uri: https://github.com/ethz-asl/eigen_catkin.git
+    version: 3323b388540fa95ec9da6f9cd887f70ead055edb
+
+- git:
+    local-name: eigen_checks
+    uri: https://github.com/ethz-asl/eigen_checks.git
+    version: 22a6247a3df11bc285d43d1a030f4e874a413997
+
+- git:
+    local-name: gflags_catkin
+    uri: https://github.com/ethz-asl/gflags_catkin.git
+    version: fc38fc525f7d48881aebb27a7b9978453556bbd4
+
+- git:
+    local-name: glog_catkin
+    uri: https://github.com/ethz-asl/glog_catkin.git
+    version: 40a9edadd15c59f8b57dc947d0135b0a007ea10b
+
+- git:
+    local-name: doxygen_catkin
+    uri: https://github.com/ethz-asl/doxygen_catkin.git
+    version: b76cc3177f5df209537f84f3b26929a438b30312
+
+# Builds OpenCV 3.4.2 + opencv_contrib 3.4.2 from source (pinned by URL+MD5
+# inside its own CMakeLists, so the OpenCV version is already reproducible).
+- git:
+    local-name: opencv3_catkin
+    uri: https://github.com/ethz-asl/opencv3_catkin.git
+    version: 934f93b0595ef9b340017b46acd720f51ac12056
+
+- git:
+    local-name: suitesparse
+    uri: https://github.com/ethz-asl/suitesparse
+    version: 0c1ee2723f6d515faf146582c47573872a9b46e6
+
+# Builds Ceres 1.14.0 (GIT_TAG set in its CMakeLists).
+- git:
+    local-name: ceres_catkin
+    uri: https://github.com/ethz-asl/ceres_catkin
+    version: 3f0643f3888d39241ee9dd3a376fe1e191f79c6a
+
+- git:
+    local-name: opengv
+    uri: https://github.com/ethz-asl/opengv.git
+    version: 7542b890f4d8655119c80763795475bec4667fc9
+
+- git:
+    local-name: yaml_cpp_catkin
+    uri: https://github.com/ethz-asl/yaml_cpp_catkin.git
+    version: 6cad108c4d5a9b9ddc95edd6f7cb23b572926351
+
+- git:
+    local-name: catkin_boost_python_buildtool
+    uri: https://github.com/ethz-asl/catkin_boost_python_buildtool.git
+    version: c8ea6e25bc5d98772d57b2ffd7619973952a6839
+
+- git:
+    local-name: minkindr
+    uri: https://github.com/ethz-asl/minkindr.git
+    version: 564f12639a8447d4d3e5e7707851424302941056
+
+# Resolves to the system protobuf on bionic (3.0.0 >= its 2.6.1 minimum), so no
+# source build happens here.
+- git:
+    local-name: protobuf_catkin
+    uri: https://github.com/ethz-asl/protobuf_catkin.git
+    version: 721a6cc17e7e937e7accfb88a9967b26134db6f9
+
+# Provides aslam_cv_common and aslam_cv_cameras, both required by covins_backend.
+- git:
+    local-name: aslam_cv2
+    uri: https://github.com/ethz-asl/aslam_cv2.git
+    version: 8df54bda80c7c562d19e035fbad3fdb5459059ae
+
+- git:
+    local-name: numpy_eigen
+    uri: https://github.com/ethz-asl/numpy_eigen.git
+    version: f63b1dfe3b0a1ee21138caa1dcedd32c7f0411d9
+
+# Upstream pinned this to the fix_imu_residual branch; resolved to its SHA.
+- git:
+    local-name: robopt_open
+    uri: https://github.com/VIS4ROB-lab/robopt_open.git
+    version: 576f1e812fd0ae628f7d4435d2798778dc5f55ab
+
+# Only needed by covins/orb_slam3 (the ROS 1 agent frontend), which this
+# backend-only image does not build. Kept pinned so this file remains a
+# complete mirror of the upstream manifest. Already pinned upstream.
+- git:
+    local-name: pangolin
+    uri: https://github.com/stevenlovegrove/Pangolin.git
+    version: b8abe866819b343a4d50d062c494e4357e4a9aa4

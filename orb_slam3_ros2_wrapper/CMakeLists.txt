@@ -59,6 +59,15 @@ include_directories(
   include
   ${ORB_SLAM3_ROOT_DIR}/include
   ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
+  # Sophus. Deliberately the copy vendored in the ORB-SLAM3 tree we link
+  # against, NOT ros-<distro>-sophus:
+  #   * find_package(Sophus) above does not put its headers on the include path
+  #     (ros-jazzy-sophus installs a flat /opt/ros/jazzy/include/sophus, which
+  #     is not a default include dir), so <sophus/se3.hpp> fails without this.
+  #   * Sophus::SE3f crosses the wrapper <-> libORB_SLAM3.so <-> libcovins_comm.so
+  #     boundaries, so all three must instantiate the same Sophus templates.
+  #     Mixing versions is an ODR violation waiting to happen.
+  ${ORB_SLAM3_ROOT_DIR}/Thirdparty/Sophus
 )
 
 if(ORB_SLAM3_ROS2_WRAPPER_ENABLE_CUDA)

@@ -1,0 +1,100 @@
+# =============================================================================
+# Single-UAV ORB-SLAM3 + COVINS reproduction, two containers on one network.
+#
+#   covins-backend : ROS Melodic, COVINS backend, listens on TCP 9033
+#   sim            : ROS 2 Jazzy, Gazebo Harmonic (headless), PX4 SITL,
+#                    ros_gz_bridge, ORB-SLAM3 RGB-D agent
+#
+# The agent reaches the backend over covins_comm's own TCP socket, NOT via ROS
+# topics or ros1_bridge: ORB_SLAM3/src/System.cc constructs
+# Communicator(covins_params::sys::server_ip, covins_params::sys::port) and
+# CommunicatorBase::ConnectToServer() resolves that address with getaddrinfo(),
+# so the Compose service name "covins-backend" works directly as server_ip.
+#
+# Run from the repository root:  docker compose -f docker/compose.yaml up -d
+# =============================================================================
+name: drone-covins
+
+networks:
+  slamnet:
+    driver: bridge
+
+volumes:
+  covins_output:
+
+services:
+  covins-backend:
+    build:
+      context: ..
+      dockerfile: docker/covins/Dockerfile
+      platforms: ["linux/arm64"]
+      args:
+        NR_JOBS: "4"
+    image: covins-backend:melodic-arm64
+    container_name: covins-backend
+    hostname: covins-backend
+    networks: [slamnet]
+    ports:
+      - "9033:9033"     # covins_comm TCP (exposed for host-side debugging)
+      - "6902:6902"     # noVNC -> COVINS RViz
+      - "5902:5902"     # raw VNC -> COVINS RViz
+    environment:
+      START_ROSCORE: "1"
+      START_VNC: "1"
+      DISPLAY: ":98"
+      VNC_PORT: "5902"
+      NOVNC_PORT: "6902"
+      ROS_MASTER_URI: "http://covins-backend:11311"
+      ROS_HOSTNAME: "covins-backend"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    volumes:
+      # Both services mount the SAME host config_comm.yaml, so the agent and
+      # the backend cannot disagree about the comm parameters.
+      - ../covins/covins_comm/config/config_comm.yaml:/root/covins_ws/src/covins/covins_comm/config/config_comm.yaml:ro
+      - ../covins/covins_backend/config/config_backend.yaml:/root/covins_ws/src/covins/covins_backend/config/config_backend.yaml:ro
+      # COVINS writes its optimised keyframe trajectory here (TUM format, per
+      # sys.trajectory_format) -- this is what gets evaluated against ground truth.
+      - covins_output:/root/covins_ws/src/covins/covins_backend/output
+      - ./out:/out
+    shm_size: "1gb"
+    stop_grace_period: 10s
+    # Keep the container alive; the backend node is started via
+    # docker/scripts/run_backend.sh so its stdout stays inspectable.
+    command: ["sleep", "infinity"]
+
+  sim:
+    build:
+      context: ..
+      dockerfile: docker/sim/Dockerfile
+      platforms: ["linux/arm64"]
+      args:
+        NJOBS: "6"
+    image: drone-sim:jazzy-arm64
+    container_name: drone-sim
+    hostname: sim
+    networks: [slamnet]
+    depends_on: [covins-backend]
+    ports:
+      - "6901:6901"     # noVNC -> RViz 2
+      - "5901:5901"     # raw VNC -> RViz 2
+    environment:
+      # Rewrites sys.server_ip in the agent's config_comm.yaml at startup.
+      COVINS_SERVER_IP: "covins-backend"
+      START_VNC: "1"
+      DISPLAY: ":99"
+      VNC_PORT: "5901"
+      NOVNC_PORT: "6901"
+      ROS_DOMAIN_ID: "55"
+      RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
+      # No GPU passthrough on macOS Docker: Gazebo's sensor pipeline and RViz
+      # both render through Mesa llvmpipe.
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      GALLIUM_DRIVER: "llvmpipe"
+    volumes:
+      - ../covins/covins_comm/config/config_comm.yaml:/opt/covins-config/config_comm.yaml:ro
+      - ./out:/out
+    # Fast DDS shared-memory transport needs real /dev/shm headroom; the 64 MB
+    # Docker default causes dropped image samples at 640x480.
+    shm_size: "2gb"
+    stop_grace_period: 10s
+    command: ["sleep", "infinity"]
