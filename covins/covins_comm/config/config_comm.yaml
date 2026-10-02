@@ -5,8 +5,15 @@
 #--------------------------------------------------------------------------------------------
 
 sys.port: '9033' # should not be necessary to be changed
-# sys.server_ip: '192.168.1.19' # The (public) IP of the machine where the COVINS back-end is running
-sys.server_ip: '127.0.0.1' #Manthan CRS
+# The address of the machine where the COVINS back-end is running.
+# CommunicatorBase::ConnectToServer() resolves this with getaddrinfo(), so a
+# DNS name works as well as a literal IP -- in the Docker Compose setup this is
+# the backend service name on the shared network. The sim container's entrypoint
+# rewrites this value from $COVINS_SERVER_IP if that variable is set.
+# Previous values kept for reference:
+#   sys.server_ip: '192.168.1.19'   # a LAN host
+#   sys.server_ip: '127.0.0.1'      # backend on the same machine
+sys.server_ip: 'covins-backend'
 #--------------------------------------------------------------------------------------------
 # Communicator
 #--------------------------------------------------------------------------------------------

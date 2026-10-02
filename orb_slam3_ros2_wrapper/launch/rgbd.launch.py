@@ -41,10 +41,19 @@ def generate_launch_description():
 
     def all_nodes_launch(context, robot_namespace, ag_n, publish_tf):
         params_file = LaunchConfiguration('params_file')
-        vocabulary_file_path = "/home/carlos/ws_offboard_control/src/ORB_SLAM3/Vocabulary/ORBvoc.txt"
-        # config_file_path = "/home/carlos/ws_offboard_control/src/orb_slam3_ros2_wrapper/params/orb_slam3_params/euroc_stereo.yaml"
-        config_file_path = "/home/carlos/ws_offboard_control/src/orb_slam3_ros2_wrapper/params/orb_slam3_params/gazebo_rgbd.yaml"
-        # config_file_path = "/home/carlos/ws_offboard_control/src/multi_slam/config/rgbd.yaml"
+        # Resolved from the environment so the same launch file works inside the
+        # container and on a host checkout. ORB_SLAM3_ROOT_DIR points at the
+        # ORB-SLAM3 source tree (its Vocabulary/ is not installed into share/);
+        # the settings file ships in this package's share/params.
+        orb_slam3_root = os.environ.get(
+            "ORB_SLAM3_ROOT_DIR",
+            os.path.join(os.path.expanduser("~"), "ws_offboard_control", "src", "ORB_SLAM3"))
+        vocabulary_file_path = os.environ.get(
+            "ORB_SLAM3_VOCABULARY",
+            os.path.join(orb_slam3_root, "Vocabulary", "ORBvoc.txt"))
+        config_file_path = os.environ.get(
+            "ORB_SLAM3_SETTINGS",
+            os.path.join(orb_wrapper_pkg, "params", "orb_slam3_params", "gazebo_rgbd.yaml"))
         declare_params_file_cmd = DeclareLaunchArgument(
             'params_file',
             default_value=os.path.join(orb_wrapper_pkg, 'params', 'ros_params', 'gazebo-rgbd-ros-params.yaml'),

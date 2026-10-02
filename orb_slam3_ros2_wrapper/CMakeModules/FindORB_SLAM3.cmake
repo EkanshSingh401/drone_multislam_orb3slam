@@ -5,9 +5,20 @@
 #
 # To help the search ORB_SLAM3_ROOT_DIR environment variable as the path to ORB_SLAM3 root folder
 #  e.g. `set( ORB_SLAM3_ROOT_DIR=~/ORB_SLAM3) `
-set(ORB_SLAM3_ROOT_DIR "~/ws_offboard_control/src/ORB_SLAM3")
-# set(ORB_SLAM3_ROOT_DIR "~/ws_offboard_control/src/covins/orb_slam3")
-# set(ORB_SLAM3_ROOT_DIR "~/ws_offboard_control/src/ros2_orb_slam3/orb_slam3")
+# Prefer an explicit -DORB_SLAM3_ROOT_DIR=..., then the ORB_SLAM3_ROOT_DIR
+# environment variable, and only then fall back to the in-workspace default.
+# NOTE: CMake does not expand "~" inside find_path/find_library PATHS, so the
+# fallback is spelled with $ENV{HOME} rather than a tilde.
+if(NOT ORB_SLAM3_ROOT_DIR)
+  if(DEFINED ENV{ORB_SLAM3_ROOT_DIR})
+    set(ORB_SLAM3_ROOT_DIR "$ENV{ORB_SLAM3_ROOT_DIR}")
+  else()
+    set(ORB_SLAM3_ROOT_DIR "$ENV{HOME}/ws_offboard_control/src/ORB_SLAM3")
+  endif()
+endif()
+# Alternatives kept for reference:
+# set(ORB_SLAM3_ROOT_DIR "$ENV{HOME}/ws_offboard_control/src/covins/orb_slam3")
+# set(ORB_SLAM3_ROOT_DIR "$ENV{HOME}/ws_offboard_control/src/ros2_orb_slam3/orb_slam3")
 
 # message(${ORB_SLAM3_ROOT_DIR})
 # message(${ORB_SLAM3_ROOT_DIR}/include)

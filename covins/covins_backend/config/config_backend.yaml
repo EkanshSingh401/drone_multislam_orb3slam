@@ -19,7 +19,7 @@ sys.trajectory_format: 'TUM' # {EUROC|TUM}
 #--------------------------------------------------------------------------------------------
 
 # maps are loaded from here (use absolute path)
-sys.map_path0: '/home/manthan/ws2/covins_ws/src/covins/covins_backend/output/map_data'
+sys.map_path0: '/root/covins_ws/src/covins/covins_backend/output/map_data'
 
 #--------------------------------------------------------------------------------------------
 # Features

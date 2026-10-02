@@ -6,33 +6,33 @@
 #   direction: GZ_TO_ROS
 
 # -------- RGB camera (IMX214) --------
-- ros_topic_name: "uav_3/rgb/image_raw"
+- ros_topic_name: "uav_1/rgb/image_raw"
   gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/IMX214/image"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "uav_3/rgb/camera_info"
+- ros_topic_name: "uav_1/rgb/camera_info"
   gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/IMX214/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
 # -------- Depth camera (StereoOV7251) --------
-- ros_topic_name: "uav_3/depth/image"
+- ros_topic_name: "uav_1/depth/image"
   gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/depth_image"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "uav_3/depth/camera_info"
+- ros_topic_name: "uav_1/depth/camera_info"
   gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
 # PointCloud
-- ros_topic_name: "uav_3/depth/points"
+- ros_topic_name: "uav_1/depth/points"
   gz_topic_name: "/world/forest/model/x500_depth_1/link/camera_link/sensor/StereoOV7251/depth_image/points"
   ros_type_name: "sensor_msgs/msg/PointCloud2"
   gz_type_name: "gz.msgs.PointCloudPacked"
@@ -86,3 +86,22 @@
 #   gz_type_name: "gz.msgs.IMU"
 #   direction: GZ_TO_ROS
 
+
+# -------- Ground truth (added for ATE/RPE evaluation) --------
+# Gazebo publishes every model's true pose on <world>/dynamic_pose/info as a
+# gz.msgs.Pose_V. ros_gz_bridge maps Pose_V -> tf2_msgs/msg/TFMessage, so this
+# arrives as a TF stream whose child_frame_id for this drone is "x500_depth_1".
+# Kept on a dedicated topic (NOT /tf) so it can never be confused with, or
+# compete against, the SLAM TF tree.
+- ros_topic_name: "ground_truth/pose_info"
+  gz_topic_name: "/world/forest/dynamic_pose/info"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS
+
+# Simulation clock, required for use_sim_time:=true on every node.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/world/forest/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS

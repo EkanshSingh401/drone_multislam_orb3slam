@@ -5,7 +5,7 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch.substitutions import LaunchConfiguration
 
 
@@ -66,7 +66,9 @@ def generate_launch_description():
     monitor_process = ExecuteProcess(
         condition=IfCondition(LaunchConfiguration("monitor_enabled")),
         cmd=[
-            "/root/colcon_ws/src/orb_slam3_ros2_wrapper/scripts/monitor_cpu_ram.sh",
+            os.path.join(
+                get_package_prefix("orb_slam3_ros2_wrapper"),
+                "lib", "orb_slam3_ros2_wrapper", "monitor_cpu_ram.sh"),
             "--name", sensor_config,
             "--hz", "0.3",
             # no --out: stdout goes to screen via `output="screen"`

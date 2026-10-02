@@ -154,6 +154,9 @@ DESTINATION share/${PROJECT_NAME}
 )
 install(PROGRAMS
   scripts/sync_repub.py
+  scripts/monitor_cpu_ram.sh
+  scripts/get_landmarks_for_pose.py
+  scripts/viz_keyframes.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

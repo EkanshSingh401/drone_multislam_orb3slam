@@ -92,7 +92,7 @@ MicroXRCEAgent udp4 -p 8888
 cd ~/ws_offboard_control
 source install/setup.bash
 ros2 run ros_gz_bridge parameter_bridge --ros-args \
-  -p config_file:=/home/carlos/ws_offboard_control/src/multi_slam/config/gz_bridge.yaml \
+  -p config_file:=$(ros2 pkg prefix --share multi_slam)/config/gz_bridge.yaml \
   -p use_sim_time:=true
 ```
 

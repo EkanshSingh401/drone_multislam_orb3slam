@@ -1,8 +1,21 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(covins_comm)
 
-# find_package(catkin_simple REQUIRED)
-# catkin_simple(ALL_DEPS_REQUIRED)
+# covins_comm is built in two different ways:
+#
+#   BUILD_LIBRARY=ON, USE_CATKIN=OFF  -> plain CMake shared library, installed to
+#       a prefix and consumed by the ROS 2 ORB-SLAM3 frontend (which links
+#       libcovins_comm.so directly).
+#   (default)                         -> catkin/catkin_simple package, consumed
+#       by covins_backend in the ROS 1 workspace.
+#
+# The catkin_simple lookup must stay enabled for the second case, otherwise the
+# cs_add_library()/cs_install()/cs_export() calls below are unresolvable CMake
+# commands and the ROS 1 backend build fails at configure time.
+if(NOT BUILD_LIBRARY)
+  find_package(catkin_simple REQUIRED)
+  catkin_simple(ALL_DEPS_REQUIRED)
+endif()
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,10 +34,36 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -march=nat
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 
+# The local utils_base.{hpp,cpp} changes replaced the cv::Mat overloads of
+# ToEigenMat44d()/ToEigenVec3d() with Sophus::SE3f / Eigen::Vector3f ones
+# (ORB-SLAM3 v1.0 switched its pose type from cv::Mat to Sophus::SE3f), so
+# covins_comm now needs Sophus headers to compile at all.
+#
+# Prefer the Sophus vendored inside the ORB-SLAM3 tree we link against: these
+# overloads are called across the covins_comm <-> ORB_SLAM3 boundary, and two
+# different Sophus versions would mean two different mangled signatures.
+find_path(COVINS_SOPHUS_INCLUDE_DIR
+    NAMES sophus/se3.hpp
+    PATHS
+        ${SOPHUS_INCLUDE_DIR}
+        ${PROJECT_SOURCE_DIR}/../orb_slam3/Thirdparty/Sophus
+        ${PROJECT_SOURCE_DIR}/../../ORB_SLAM3/Thirdparty/Sophus
+        /usr/local/include
+        /usr/include
+    NO_DEFAULT_PATH
+)
+if(NOT COVINS_SOPHUS_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "Sophus headers (sophus/se3.hpp) not found. covins_comm requires them "
+        "because utils_base.hpp uses Sophus::SE3f. Pass -DSOPHUS_INCLUDE_DIR=...")
+endif()
+message(STATUS "covins_comm Sophus include dir = ${COVINS_SOPHUS_INCLUDE_DIR}")
+
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/covins
     ${PROJECT_SOURCE_DIR}/thirdparty
+    ${COVINS_SOPHUS_INCLUDE_DIR}
 )
 
 set(EXTERNAL_LIBRARIES
@@ -78,6 +117,16 @@ else()
       
       install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/
         DESTINATION include
+      )
+
+      # config_comm.hpp resolves its runtime YAML path at COMPILE time from
+      # __FILE__, by stripping everything from "include/covins" onwards and
+      # appending "config/config_comm.yaml". For installed headers at
+      # <prefix>/include/covins/..., that means <prefix>/config/config_comm.yaml.
+      # Install the YAML there, otherwise every covins_params value silently
+      # initialises from a missing file.
+      install(DIRECTORY ${PROJECT_SOURCE_DIR}/config/
+        DESTINATION config
       )
     endif()
 
