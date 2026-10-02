@@ -235,6 +235,12 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
         --executor sequential --parallel-workers 1
 
+# Built strictly sequentially, one compiler at a time. The wrapper's
+# translation units pull in ORB-SLAM3 + Eigen + PCL + Sophus templates under
+# C++20 and each cc1plus can exceed 2 GB; anything more parallel than this gets
+# OOM-killed ("c++: fatal error: Killed signal terminated program cc1plus") on a
+# 16 GB Docker VM.
+ENV MAKEFLAGS="-j1"
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     source ${WS}/install/setup.bash && \
     cd ${WS} && \
@@ -243,7 +249,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
                      -DORB_SLAM3_ROOT_DIR=${ORB_SLAM3_ROOT_DIR} \
                      -DBUILD_TESTING=OFF \
-        --parallel-workers 2 && \
+        --executor sequential --parallel-workers 1 && \
     test -x ${WS}/install/orb_slam3_ros2_wrapper/lib/orb_slam3_ros2_wrapper/rgbd && \
     echo "orb_slam3_ros2_wrapper rgbd node built"
 

@@ -347,6 +347,55 @@ Two reasons for that specific copy rather than `ros-jazzy-sophus`:
    boundaries (see §6). All three must instantiate the same Sophus templates;
    two versions would be an ODR violation.
 
+## 19b. Sophus and COVINS headers are *public* dependencies — consumers need them
+
+Two further build failures, both the same shape as §6/§7 but one level out: the
+repo's local modifications turned Sophus and COVINS into **public** dependencies
+of headers that other packages include, and nothing propagated them.
+
+**Sophus → `covins_backend`** (*file: `docker/covins/Dockerfile`*).
+`covins_comm/include/.../utils_base.hpp` declares
+`ToEigenMat44d(const Sophus::SE3f&)` and `#include <sophus/se3.hpp>`, so every
+*consumer* of covins_comm needs Sophus too, not just covins_comm itself:
+`covins_backend` failed with
+`utils_base.hpp:32:10: fatal error: sophus/se3.hpp: No such file or directory`.
+Fixed by installing the header-only Sophus to `/usr/local/include/sophus`,
+which fixes covins_comm and covins_backend in one place without editing
+`covins_backend/CMakeLists.txt`. The source is the copy the repo vendored at
+`covins/orb_slam3/Thirdparty/Sophus`, which is **byte-identical** to
+`ORB_SLAM3/Thirdparty/Sophus` used by the ROS 2 container — so the whole
+project uses a single Sophus version, and §6's ODR concern is satisfied
+project-wide rather than only inside one container.
+
+**COVINS → `orb_slam3_ros2_wrapper`** (*file: `orb_slam3_ros2_wrapper/CMakeLists.txt`*).
+Grafting the COVINS communicator into ORB-SLAM3 made COVINS a public dependency
+of ORB-SLAM3's headers: `ImuTypes.h` does
+`#include <covins/covins_base/typedefs_base.hpp>` (which itself includes
+cereal). So the wrapper failed with
+`ImuTypes.h:38:10: fatal error: covins/covins_base/typedefs_base.hpp: No such file or directory`.
+Added a `find_path` for the COVINS include tree (mirroring the one already in
+`ORB_SLAM3/CMakeLists.txt`), with a `FATAL_ERROR` that explains the dependency
+rather than failing with a bare missing-header message.
+
+## 19c. Build parallelism capped (memory, not correctness)
+
+*Files: `docker/sim/Dockerfile`, `docker/covins/Dockerfile`*
+
+With a 16 GB Docker VM, these builds are memory-bound rather than CPU-bound:
+
+- `orb_slam3_ros2_wrapper`'s translation units pull in ORB-SLAM3 + Eigen + PCL +
+  Sophus templates under C++20, and a single `cc1plus` can exceed 2 GB.
+- `opengv` and OpenCV 3.4.2 have similarly heavy units.
+
+Running the two images' builds **concurrently** OOM-killed both
+(`c++: fatal error: Killed signal terminated program cc1plus`, BuildKit
+`ResourceExhausted`). The sim image now builds its colcon workspace with
+`--executor sequential --parallel-workers 1` and `MAKEFLAGS=-j1`, the backend
+image defaults to `NR_JOBS=2`, and **the two images must be built one at a
+time**. `docker compose build` does this sequentially by default.
+
+This is a resource limit of this host, not a property of the code.
+
 ## 19. `-DBUILD_TESTING=OFF` for the wrapper
 
 *File: `docker/sim/Dockerfile`*

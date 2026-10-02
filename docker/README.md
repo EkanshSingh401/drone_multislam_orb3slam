@@ -47,6 +47,11 @@ poses *back* into ROS 2, and is off by default.
 docker compose -f docker/compose.yaml build
 ```
 
+**Build the two images one at a time** (which is what `docker compose build`
+does by default — don't add `--parallel`). These builds are memory-bound: a
+single `cc1plus` on the wrapper can exceed 2 GB, and running both images
+concurrently OOM-kills them even with 16 GB. See [PATCHES.md](PATCHES.md) §19c.
+
 The sim image builds PX4-Autopilot at a pinned commit, Pangolin, the Micro
 XRCE-DDS agent, ORB-SLAM3 (+ DBoW2, g2o), `covins_comm` as a standalone shared
 library, and the colcon workspace. The backend image compiles OpenCV 3.4.2,

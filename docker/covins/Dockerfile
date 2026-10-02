@@ -27,9 +27,10 @@ ENV TERM=xterm
 ENV PYTHONIOENCODING=UTF-8
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Cap parallelism: OpenCV 3.4.2 and Ceres 1.14.0 translation units are large and
-# will OOM the Docker VM at full -j.
-ARG NR_JOBS=4
+# Cap parallelism: OpenCV 3.4.2, Ceres 1.14.0 and opengv have large translation
+# units. At -j4 (and especially alongside a concurrent sim-image build) cc1plus
+# gets OOM-killed on a 16 GB Docker VM. Build the two images one at a time.
+ARG NR_JOBS=2
 
 # -----------------------------------------------------------------------------
 # 1. Packages
@@ -84,6 +85,24 @@ COPY docker/covins/dependencies.pinned.rosinstall ${CATKIN_WS}/src/covins/depend
 RUN rm -rf ${CATKIN_WS}/src/covins/covins_comm/build \
            ${CATKIN_WS}/src/covins/covins_comm/lib && \
     echo "purged committed x86-64 covins_comm artifacts"
+
+# Sophus, header-only, to the system include path.
+#
+# The repo's local covins_comm changes made Sophus a PUBLIC dependency of
+# covins_comm's headers: utils_base.hpp now declares
+# ToEigenMat44d(const Sophus::SE3f&) and does #include <sophus/se3.hpp>.
+# So every consumer needs it too, not just covins_comm --
+# `covins_backend` fails with "fatal error: sophus/se3.hpp: No such file or
+# directory" otherwise. Installing it system-wide fixes covins_comm and
+# covins_backend in one place without editing covins_backend's CMakeLists.
+#
+# Source is the copy the repo vendored at covins/orb_slam3/Thirdparty/Sophus,
+# which is byte-identical to ORB_SLAM3/Thirdparty/Sophus used by the ROS 2
+# container -- so the whole project uses one Sophus version.
+RUN cp -r ${CATKIN_WS}/src/covins/orb_slam3/Thirdparty/Sophus/sophus \
+          /usr/local/include/sophus && \
+    test -f /usr/local/include/sophus/se3.hpp && \
+    echo "Sophus headers installed to /usr/local/include/sophus"
 
 WORKDIR ${CATKIN_WS}
 

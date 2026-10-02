@@ -55,8 +55,28 @@ if(ORB_SLAM3_ROS2_WRAPPER_ENABLE_CUDA)
   message(WARNING "CUDA support requested for ORB_SLAM3_ROS2_WRAPPER")
 endif()
 
+# This fork grafts the COVINS agent communicator into ORB-SLAM3, which makes
+# COVINS a PUBLIC dependency of ORB-SLAM3's headers: ImuTypes.h does
+# #include <covins/covins_base/typedefs_base.hpp>, and that in turn includes
+# <cereal/cereal.hpp>. So anything including ORB-SLAM3 headers -- this wrapper
+# included -- needs the COVINS install tree on its include path.
+find_path(COVINS_INCLUDE_DIR
+  NAMES covins/covins_base/typedefs_base.hpp
+  PATHS $ENV{COVINS_PREFIX}/include $ENV{HOME}/.local/include
+        /usr/local/include /usr/include
+)
+if(NOT COVINS_INCLUDE_DIR)
+  message(FATAL_ERROR
+    "COVINS headers not found (expected covins/covins_base/typedefs_base.hpp "
+    "under $ENV{HOME}/.local/include). ORB-SLAM3's public headers include them, "
+    "so this package cannot compile without them. Build and install "
+    "covins/covins_comm with -DBUILD_LIBRARY=ON -DUSE_CATKIN=OFF first.")
+endif()
+message(STATUS "orb_slam3_ros2_wrapper COVINS_INCLUDE_DIR = ${COVINS_INCLUDE_DIR}")
+
 include_directories(
   include
+  ${COVINS_INCLUDE_DIR}
   ${ORB_SLAM3_ROOT_DIR}/include
   ${ORB_SLAM3_ROOT_DIR}/include/CameraModels
   # Sophus. Deliberately the copy vendored in the ORB-SLAM3 tree we link

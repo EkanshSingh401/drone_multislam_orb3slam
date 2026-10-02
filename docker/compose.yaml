@@ -29,7 +29,9 @@ services:
       dockerfile: docker/covins/Dockerfile
       platforms: ["linux/arm64"]
       args:
-        NR_JOBS: "4"
+        # See docker/PATCHES.md §19c: these builds are memory-bound, and the two
+        # images must not be built concurrently on a 16 GB VM.
+        NR_JOBS: "2"
     image: covins-backend:melodic-arm64
     container_name: covins-backend
     hostname: covins-backend
@@ -68,6 +70,9 @@ services:
       dockerfile: docker/sim/Dockerfile
       platforms: ["linux/arm64"]
       args:
+        # Applies to PX4 / Pangolin / ORB-SLAM3, which are fine at -j6. The
+        # colcon step is pinned to -j1 inside the Dockerfile regardless; see
+        # docker/PATCHES.md §19c.
         NJOBS: "6"
     image: drone-sim:jazzy-arm64
     container_name: drone-sim
