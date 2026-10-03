@@ -91,6 +91,19 @@ DEPTH_NEAR, DEPTH_FAR = 0.2, 20.0
 # and run_experiment.sh records the world's actual gravity in each MANIFEST.txt.
 GRAVITY_MAG = 9.81
 
+# Gazebo's physics step, from the PX4 worlds (<max_step_size>0.004</max_step_size>).
+# Sensor stamps are quantised to it, so the INSTANTANEOUS inter-frame gap is a
+# whole number of steps and is coarser than 1/IMG_RATE_HZ. At 30 Hz the period is
+# 33.33 ms, which lands between 8 steps (32 ms) and 9 steps (36 ms), and the
+# stream alternates between the two -- measured exactly that way by
+# check_stereo_sync.py (min 32.000 ms, median 32.000, max 36.000).
+#
+# The MINIMUM gap is what OpenVINS's frame throttle has to clear, so it is
+# derived here rather than assumed.
+PHYSICS_STEP_S = 0.004
+MIN_FRAME_GAP_S = math.floor((1.0 / IMG_RATE_HZ) / PHYSICS_STEP_S) * PHYSICS_STEP_S
+MIN_TRACK_FREQ_HZ = 1.0 / MIN_FRAME_GAP_S
+
 # Runtime names the bridge config is written against. PX4 spawns
 # "<PX4_SIM_MODEL without gz_>_<instance>", so gz_x500_d455 -i 1 -> x500_d455_1.
 WORLD_NAME = "forest"
@@ -717,11 +730,21 @@ def gen_openvins_estimator_config(d: dict) -> str:
             compares trajectories in UNALIGNED frames, so NEES has to be
             computed afterwards by ov_eval with posyaw alignment.
 
-      track_frequency stays at 31.0, above the 30.3 Hz the cameras actually
-            publish. callback_stereo DROPS frames that arrive faster than
-            1/track_frequency, silently -- a value at or below the camera rate
-            would quietly discard frames and make "frames processed == frames
-            published" fail.
+      track_frequency  31.0 -> 40.0, and the value is MEASURED, not guessed.
+            ROS2Visualizer.cpp:565-568 drops a stereo pair when
+                timestamp < camera_last_timestamp + 1/track_frequency
+            and returns BEFORE updating camera_last_timestamp, with no log line.
+            The bound is therefore set by the MINIMUM inter-frame gap, not by
+            the average rate. check_stereo_sync.py measures that gap at exactly
+            32.000 ms (Gazebo quantises stamps to its 4 ms physics step, so the
+            instantaneous period is coarser than the 30.33 Hz average), which
+            requires track_frequency > 31.250 Hz.
+            The real-D455 config's 31.0 is BELOW that: it would have dropped
+            frame 2, left camera_last_timestamp at frame 1, accepted frame 3 at
+            +64 ms, and processed every OTHER frame -- ~15 Hz instead of 30.3,
+            silently. 40.0 leaves margin; since the parameter is used only for
+            this throttle (and one debug print), a higher value simply disables
+            the throttle and costs nothing.
 
       init_dyn_use stays false (static initialisation only); dynamic
             initialisation segfaulted on the Jetson build.
@@ -812,8 +835,10 @@ grid_x: 5
 grid_y: 5
 min_px_dist: 15
 knn_ratio: 0.70
-# ABOVE the {IMG_RATE_HZ:g} Hz camera rate on purpose -- see the docstring.
-track_frequency: 31.0
+# Must EXCEED 1/min_inter_frame_gap = 31.250 Hz (measured: min gap 32.000 ms),
+# NOT merely the {IMG_RATE_HZ:g} Hz average -- see the docstring. Frames arriving
+# sooner than 1/track_frequency are dropped silently.
+track_frequency: 40.0
 downsample_cameras: false
 num_opencv_threads: 4
 histogram_method: "HISTOGRAM"
@@ -995,8 +1020,11 @@ def verify_consistency(root: Path) -> int:
             # At or below the camera rate, ov_msckf's callback_stereo discards
             # frames with no message at all, which would break the
             # frames-processed == frames-published check.
-            ("track_frequency ABOVE the camera rate",
-             tf is not None and tf > IMG_RATE_HZ, f"{tf} > {IMG_RATE_HZ:g}"),
+            # The bound is 1/min_inter_frame_gap, NOT the average rate. Checking
+            # against the average would pass 31.0, which drops every other frame.
+            ("track_frequency above 1/min_frame_gap (not just the avg rate)",
+             tf is not None and tf > MIN_TRACK_FREQ_HZ,
+             f"{tf} > {MIN_TRACK_FREQ_HZ:.3f} (gap {MIN_FRAME_GAP_S*1e3:.1f} ms)"),
             ("calib_cam_extrinsics frozen",
              "calib_cam_extrinsics: false" in est, ""),
             ("calib_cam_intrinsics frozen",

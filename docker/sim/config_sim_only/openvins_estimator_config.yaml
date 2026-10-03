@@ -84,8 +84,10 @@ grid_x: 5
 grid_y: 5
 min_px_dist: 15
 knn_ratio: 0.70
-# ABOVE the 30 Hz camera rate on purpose -- see the docstring.
-track_frequency: 31.0
+# Must EXCEED 1/min_inter_frame_gap = 31.250 Hz (measured: min gap 32.000 ms),
+# NOT merely the 30 Hz average -- see the docstring. Frames arriving
+# sooner than 1/track_frequency are dropped silently.
+track_frequency: 40.0
 downsample_cameras: false
 num_opencv_threads: 4
 histogram_method: "HISTOGRAM"
