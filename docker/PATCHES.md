@@ -623,6 +623,104 @@ The practical consequence: **1 s of simulated time costs roughly 30 s of wall
 clock** with everything running. Scripted flights must be scaled accordingly,
 and this is a property of software rasterisation, not of the repo.
 
+## 27. Ground-truth plumbing: three separate defects
+
+Found while producing the ATE/RPE numbers. Each one on its own silently
+produced an unusable or misleading evaluation rather than an error.
+
+**(a) `ros_gz_bridge` discards entity names in `Pose_V -> TFMessage`.**
+Every `frame_id` and `child_frame_id` in the recorded ground-truth stream is the
+empty string, so filtering by model name matches nothing. The names *are* present
+in Gazebo: `gz topic -e -t /world/forest/dynamic_pose/info` shows
+`x500_depth_1`, `base_link`, `rotor_0..3`, `camera_link`. The conversion drops
+them.
+
+Worked around by selecting the transform by **index**: Gazebo orders that
+message `[model, link, link, ...]`, so index 0 is the model's world pose.
+`bag_to_tum.py --variance` verifies this rather than assuming it — index 0 sweeps
+`x -0.18..3.20, y -0.23..3.20, z -0.01..2.10` (the commanded 3 m square at 2 m)
+while indices 1-6 are constant link offsets. Index 6 sits at
+`(0.12, 0.03, 0.24)`, which matches `robot_x/robot_y/robot_z` in the wrapper's
+ROS params — an independent confirmation that the indexing is right.
+
+**(b) `dynamic_pose/info` is the wrong topic for a naive read.** Its entries
+after index 0 are per-link poses *relative to the model*, not world poses. A
+first attempt that filtered by name and fell through to "whatever is there"
+would have produced rotor offsets (`±0.174`) as the drone's trajectory.
+
+**(c) The bridge stamps ground truth with the SYSTEM clock,** ignoring
+`use_sim_time:=true`. Measured: ground truth spanned
+`1791001442.97 .. 1791002867.67` (Unix epoch) while the SLAM estimate spanned
+`13.10 .. 451.18` (sim time). `evo` reported
+`found no matching timestamps ... with max. time diff 0.05 (s)` — zero overlap.
+
+Fixed with `bag_to_tum.py --time-from-clock /clock`, which interpolates each
+sample's bag receive time through the 109,533 recorded `/clock` samples onto
+simulation time. After the remap both trajectories span **438.1 s**, and evo
+matches them.
+
+## 28. COVINS writes its trajectory in map order, not time order
+
+*File: `docker/scripts/record_and_eval.sh`*
+
+`KF_<id>_ftum.csv` is emitted in keyframe-map order. Observed: first row
+`t=64.72`, last row `t=10.40`. evo rejects non-monotonic stamps, so the CSV is
+now sorted by timestamp and de-duplicated before evaluation.
+
+## 29. The recorded window is not the flight window
+
+Worth stating because it changes how the numbers should be read.
+`ros2 bag record` did not stop on `SIGINT` and needed `SIGTERM`, so the bag kept
+running for ~6.5 minutes of simulated time after the drone landed. The result:
+
+| | window |
+|---|---|
+| bag / SLAM estimate / ground truth | 13.1 - 451.2 s sim |
+| actual flight (and all COVINS keyframes) | 10.4 - 64.7 s sim |
+
+So ~88% of the recorded samples are of a **stationary** vehicle. Evaluating over
+the full bag gives ORB-SLAM3 an ATE RMSE of 0.192 m with a median of 0.037 m --
+flattering numbers that mostly measure a parked drone. Restricting to the flight
+window gives 0.421 m. Both are reported below; the windowed figure is the
+meaningful one, and it is also the only one comparable to COVINS.
+
+(The hard kill also left no `metadata.yaml`; `ros2 bag reindex -s mcap`
+regenerates it.)
+
+---
+
+## Results: ATE / RPE against Gazebo ground truth
+
+Single `x500_depth`, `forest` world, 3 m square at 2 m altitude with yaw slewed
+per leg. Ground truth from Gazebo, `evo` with SE(3) Umeyama alignment (`-a`) and
+**no scale fitting** — RGB-D SLAM is metric, so letting evo solve for scale would
+hide real scale error.
+
+**Like-for-like, flight window only (10.4 - 64.8 s sim):**
+
+| | ATE RMSE | ATE mean | ATE median | ATE max | RPE(1 m) RMSE | RPE(1 m) mean |
+|---|---|---|---|---|---|---|
+| ORB-SLAM3 frontend | 0.421 m | 0.364 m | 0.456 m | 0.646 m | **0.172 m** | 0.150 m |
+| COVINS optimised (217 KFs, after visual GBA) | **0.303 m** | 0.286 m | 0.285 m | 0.525 m | 1.185 m | 1.114 m |
+
+**COVINS improves global accuracy**: ATE RMSE 0.421 -> 0.303 m, which is what a
+global bundle adjustment is for.
+
+**The RPE comparison is not like-for-like and should not be read as COVINS being
+worse locally.** `--delta 1 --delta_unit m` with consecutive pairs is evaluated
+over 217 sparse keyframes for COVINS versus 13,276 dense poses at ~10 Hz for the
+frontend. Consecutive COVINS keyframes are far apart, so the 1 m delta is badly
+conditioned on that trajectory. It measures sparsity, not drift.
+
+For reference, over the full 438 s bag (with the stationary tail, see §29):
+ORB-SLAM3 ATE RMSE 0.192 m / median 0.037 m, RPE(1 m) RMSE 0.172 m.
+
+Caveat worth keeping in view: COVINS is a visual-**inertial** system and this
+runs it RGB-D with no IMU, so its inertial machinery is unexercised and the GBA
+is visual-only (service `action: 5`). With a single agent and the repo's
+`placerec.inter_map_matches_only: 1` there is also no place recognition, hence no
+loop closures — by configuration, not by failure.
+
 ---
 
 ## Pinned versions, for the record

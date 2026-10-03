@@ -82,8 +82,22 @@ python3 /opt/scripts/bag_to_tum.py "${BAG}" \
     --out "${RUNDIR}/est_orbslam3.tum"
 EST_OK=$?
 
+# Ground truth comes out by INDEX, not by name. ros_gz_bridge's
+# gz.msgs.Pose_V -> TFMessage conversion discards the entity names, so every
+# frame_id/child_frame_id in the recorded stream is empty and a name filter
+# matches nothing. Gazebo orders <world>/dynamic_pose/info as
+# [model, link, link, ...], so index 0 is the model's world pose.
+#
+# Verified rather than assumed: --variance shows index 0 sweeping the commanded
+# path while indices 1..6 are constant link offsets (index 6 sits at
+# (0.12, 0.03, 0.24), matching the camera extrinsics in the wrapper params).
+echo "--> ground-truth index check"
 python3 /opt/scripts/bag_to_tum.py "${BAG}" \
-    --tf-topic /ground_truth/pose_info --tf-child "${MODEL}" \
+    --tf-topic /ground_truth/pose_info --variance --out /dev/null || true
+
+python3 /opt/scripts/bag_to_tum.py "${BAG}" \
+    --tf-topic /ground_truth/pose_info --tf-index "${GT_TF_INDEX:-0}" \
+    --time-from-clock /clock \
     --out "${RUNDIR}/gt.tum"
 GT_OK=$?
 
@@ -131,8 +145,14 @@ COVINS_TUM="$(ls /out/covins/KF_*_ftum.csv 2>/dev/null | head -1)"
 if [[ -n "${COVINS_TUM}" ]]; then
     echo "found ${COVINS_TUM}"
     # Strip any header/comment lines; evo wants bare numeric rows.
-    grep -E '^[-0-9]' "${COVINS_TUM}" | tr ',' ' ' > "${RUNDIR}/est_covins.tum"
+    # Sort by timestamp and drop non-monotonic duplicates. COVINS writes
+    # keyframes in map order, not chronological order (observed: first row
+    # t=64.7, last row t=10.4), and evo rejects unordered stamps.
+    grep -E '^[-0-9]' "${COVINS_TUM}" | tr ',' ' ' \
+        | sort -g -k1,1 | awk '!seen[$1]++' > "${RUNDIR}/est_covins.tum"
     echo "  $(wc -l < "${RUNDIR}/est_covins.tum") keyframe poses"
+    echo "  span: $(head -1 "${RUNDIR}/est_covins.tum" | awk '{printf "%.2f", $1}')"\
+         "-> $(tail -1 "${RUNDIR}/est_covins.tum" | awk '{printf "%.2f", $1}') s"
     run_evo "covins" "${RUNDIR}/est_covins.tum"
 else
     echo "No COVINS trajectory found at /out/covins/KF_*_ftum.csv."
