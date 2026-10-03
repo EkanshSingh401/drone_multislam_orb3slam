@@ -33,6 +33,7 @@ mkdir -p "${OUTDIR}"
 
 source /opt/ros/"${ROS_DISTRO}"/setup.bash
 source /root/ws_offboard_control/install/setup.bash
+WS_OV="/root/ws_offboard_control/install/ov_msckf/lib/ov_msckf"
 
 hr() { printf '%s\n' "------------------------------------------------------------"; }
 log() { echo "[replay $(date +%H:%M:%S)] $*"; }
@@ -73,10 +74,39 @@ if [[ "${EST}" == "openvins" ]]; then
     # PRINT_DEBUG("[TIME]: %.4f seconds for tracking") in VioManager, and
     # counting those lines is how "frames processed" is measured directly from
     # the estimator rather than inferred from its output rate.
-    nohup ros2 launch ov_msckf subscribe.launch.py \
-        config_path:=/opt/config_sim_only/openvins_estimator_config.yaml \
-        verbosity:=DEBUG max_cameras:=2 use_stereo:=true \
-        save_total_state:=true \
+    # run_subscribe_msckf is invoked DIRECTLY, not through subscribe.launch.py,
+    # because the launch file forwards only its own declared arguments and the
+    # output filepaths are not among them.
+    #
+    # That matters: with save_total_state true, ROS2Visualizer reads
+    # filepath_est / filepath_std from ROS PARAMETERS, not from the estimator
+    # YAML (the YAML copies are read only by run_simulation). Absent those
+    # parameters it falls back to "state_estimate.txt", whose parent_path() is
+    # EMPTY, and then
+    #     boost::filesystem::create_directories(parent_path())
+    # throws on an empty path and the node aborts before it starts:
+    #     terminate called after throwing an instance of
+    #     'boost::filesystem::filesystem_error'
+    #       what(): create_directories: Invalid argument [generic:22]
+    # So the paths must be absolute AND have a directory component. Pointing
+    # them into the run directory also keeps each replay's state files with its
+    # own results.
+    #
+    # The node is created with allow_undeclared_parameters(true) and
+    # automatically_declare_parameters_from_overrides(true)
+    # (run_subscribe_msckf.cpp:62-65), so -p overrides are picked up by
+    # has_parameter() without the launch file declaring them.
+    nohup "${WS_OV}/run_subscribe_msckf" --ros-args \
+        -r __ns:=/ov_msckf \
+        -p use_sim_time:=true \
+        -p config_path:=/opt/config_sim_only/openvins_estimator_config.yaml \
+        -p verbosity:=DEBUG \
+        -p max_cameras:=2 \
+        -p use_stereo:=true \
+        -p save_total_state:=true \
+        -p filepath_est:="${OUTDIR}/ov_state_est.txt" \
+        -p filepath_std:="${OUTDIR}/ov_state_std.txt" \
+        -p filepath_gt:="${OUTDIR}/ov_state_gt.txt" \
         > "${OUTDIR}/openvins.log" 2>&1 &
     EST_PID=$!
     for _ in $(seq 1 120); do

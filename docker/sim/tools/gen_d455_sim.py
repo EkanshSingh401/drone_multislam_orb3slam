@@ -326,10 +326,10 @@ def gen_imu_chain(d: dict) -> str:
 # See D455_SIM_CALIBRATION.md for the full derivation.
 imu0:
   T_i_b:
-  - [1.0, 0.0, 0.0, 0.0]
-  - [0.0, 1.0, 0.0, 0.0]
-  - [0.0, 0.0, 1.0, 0.0]
-  - [0.0, 0.0, 0.0, 1.0]
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
   accelerometer_noise_density: {ACC_NOISE_DENSITY:.8g}
   accelerometer_random_walk: {ACC_RANDOM_WALK:.8g}
   gyroscope_noise_density: {GYR_NOISE_DENSITY:.8g}
@@ -351,30 +351,47 @@ imu0:
   # run_subscribe_msckf.cpp:96 then refuses to start. It does NOT fall back to
   # the Eigen defaults it was handed.
   Tw:
-  - [1.0, 0.0, 0.0]
-  - [0.0, 1.0, 0.0]
-  - [0.0, 0.0, 1.0]
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
   R_IMUtoGYRO:
-  - [1.0, 0.0, 0.0]
-  - [0.0, 1.0, 0.0]
-  - [0.0, 0.0, 1.0]
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
   Ta:
-  - [1.0, 0.0, 0.0]
-  - [0.0, 1.0, 0.0]
-  - [0.0, 0.0, 1.0]
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
   R_IMUtoACC:
-  - [1.0, 0.0, 0.0]
-  - [0.0, 1.0, 0.0]
-  - [0.0, 0.0, 1.0]
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
   Tg:
-  - [0.0, 0.0, 0.0]
-  - [0.0, 0.0, 0.0]
-  - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
 """
 
 
-def _yaml_mat(m) -> str:
-    return "\n".join("  - [" + ", ".join(f"{v:.10g}" for v in row) + "]" for row in m)
+def _yaml_mat(m, indent: int = 4) -> str:
+    """Emit a matrix as a YAML block sequence, indented for cv::FileStorage.
+
+    The rows must be indented DEEPER than their key. Writing
+
+        T_i_b:
+        - [1.0, 0.0, 0.0, 0.0]
+
+    is valid YAML and PyYAML accepts it, but OpenVINS parses these files with
+    cv::FileStorage, whose YAML reader rejects it:
+
+        OpenCV(4.6.0) persistence_yml.cpp:359: error: (-212:Parsing error)
+        skipSpaces ... kalibr_imu_chain.yaml(17): Incorrect indentation
+
+    and the node aborts with a cv::Exception before reading anything else.
+    OpenVINS's own shipped configs indent the rows by four spaces, so match that.
+    """
+    pad = " " * indent
+    return "\n".join(pad + "- [" + ", ".join(f"{v:.10g}" for v in row) + "]" for row in m)
 
 
 def gen_imucam_chain(d: dict) -> str:
