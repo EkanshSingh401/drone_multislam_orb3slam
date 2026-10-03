@@ -721,6 +721,50 @@ is visual-only (service `action: 5`). With a single agent and the repo's
 `placerec.inter_map_matches_only: 1` there is also no place recognition, hence no
 loop closures — by configuration, not by failure.
 
+## 30. ros1_bridge (step 7, optional): NOT built — requires amd64 emulation
+
+**Attempted natively on arm64 and stopped, as instructed, rather than forced.**
+
+`ros-jazzy-ros1-bridge-builder` is partly arm64-aware — it branches on
+`uname -m` for `aarch64` to fix a pkgconfig path — so a native build looked
+plausible. It fails at stage 5:
+
+```
+E: Unable to locate package ros-noetic-desktop
+ERROR: process "... apt -y install ros-noetic-desktop ..." exit code: 100
+```
+
+Root cause, which the upstream Dockerfile states in its own comment:
+
+```
+# 5.) Install ROS1 Noetic desktop
+# (Currently, ppa contains AMD64 builds only)
+RUN add-apt-repository ppa:ros-for-jammy/noble
+```
+
+Noetic targets Ubuntu Focal, so getting it onto Noble depends on that PPA, and
+the PPA is amd64-only. Verified against the PPA index rather than taken on
+trust:
+
+| `ppa:ros-for-jammy/noble` | `ros-noetic-*` packages |
+|---|---|
+| `binary-amd64` | **235** (incl. `ros-noetic-desktop`) |
+| `binary-arm64` | **0** (no index published) |
+
+So on this host `ros1_bridge` can only be built under amd64 emulation. Rosetta
+is enabled in Docker Desktop, so `--platform linux/amd64` is available if it is
+ever wanted; it was not attempted here because the instruction was to stop and
+report, and because **the reproduction does not depend on it**:
+
+- The ORB-SLAM3 -> COVINS path uses covins_comm's own TCP socket, not ROS
+  topics. See the architecture note at the top of docker/README.md.
+- `multi_slam/launch/bringup.launch.py` now has ros1_bridge behind
+  `use_ros1_bridge` (default false) -- see §11.
+- ros1_bridge is only relevant to the repo's separate, still-in-progress goal
+  of bringing COVINS's ROS 1 pose/TF output back into ROS 2.
+
+Everything in steps 1-6 was completed and measured without it.
+
 ---
 
 ## Pinned versions, for the record
