@@ -99,6 +99,7 @@ fi
     echo "rig_env:        ${RIG_ENV}"
     echo "eval_env:       ${EVAL_ENV}"
     echo "use_covins:     ${USE_COVINS}"
+    echo "record_sensors: ${RECORD_SENSORS:-0}"
     echo "git_commit:     $(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "git_dirty:      $(test -n "$(git status --porcelain 2>/dev/null)" && echo yes || echo no)"
     echo "sim_image:      $(docker image inspect drone-sim:jazzy-arm64 --format '{{.Id}}' 2>/dev/null || echo unknown)"
@@ -149,7 +150,9 @@ for i in $(seq 1 "${N}"); do
     sleep 30
 
     ${COMPOSE} exec -T sim env SIDE="${SIDE}" ALT="${ALT}" LEG_TIME="${LEG_TIME}" \
-        SETTLE="${SETTLE}" ${EVAL_ENV} /opt/scripts/record_and_eval.sh \
+        SETTLE="${SETTLE}" PATH_VERSION="${PATH_VERSION}" \
+        RECORD_SENSORS="${RECORD_SENSORS:-0}" ${EVAL_ENV} \
+        /opt/scripts/record_and_eval.sh \
         > "${OUT}/run${i}_flight.log" 2>&1 || echo "run ${i}: record_and_eval returned $?"
 
     RUNDIR=$(grep -oE '/out/eval/[0-9-]+' "${OUT}/run${i}_flight.log" | head -1)

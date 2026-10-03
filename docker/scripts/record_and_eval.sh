@@ -57,9 +57,32 @@ else
     fi
 
     echo "--> starting rosbag2"
+    # RECORD_SENSORS=1 additionally captures the raw sensor streams, which is
+    # what makes an offline replay possible: both estimators can then be fed
+    # BYTE-IDENTICAL input instead of two separate live flights that differ in
+    # scheduling. It is off by default because it is expensive -- 848x480 mono8
+    # at 30 Hz on two imagers is ~24 MB per simulated second, so a 60 s flight
+    # is ~1.5 GB and a 3-minute path B run is ~4.5 GB.
+    #
+    # zstd file compression is used for those runs. It costs CPU at record time
+    # but the recorder is not the bottleneck here (the renderer is), and it
+    # roughly halves the footprint on mono8.
+    SENSOR_TOPICS=()
+    BAG_EXTRA=()
+    if [[ "${RECORD_SENSORS:-0}" == "1" ]]; then
+        SENSOR_TOPICS=(
+            /camera/infra1/image_rect_raw /camera/infra1/camera_info
+            /camera/infra2/image_rect_raw /camera/infra2/camera_info
+            /camera/imu
+        )
+        BAG_EXTRA=(--compression-mode file --compression-format zstd)
+        echo "    RECORD_SENSORS=1: also recording stereo IR + IMU (zstd)"
+    fi
     ros2 bag record -s mcap -o "${RUNDIR}/flight.bag" \
+        "${BAG_EXTRA[@]}" \
         "${EST_TOPIC}" \
         "/ground_truth/pose_info" \
+        "${SENSOR_TOPICS[@]}" \
         /clock /tf /tf_static \
         > "${RUNDIR}/rosbag.log" 2>&1 &
     BAG_PID=$!
@@ -78,7 +101,9 @@ else
     python3 /opt/scripts/fly_path.py \
         --side "${SIDE}" --alt "${ALT}" \
         --leg-time "${LEG_TIME}" --settle-time "${SETTLE}" \
+        --path-version "${PATH_VERSION:-A}" \
         2>&1 | tee "${RUNDIR}/fly_path.log"
+    echo "${PATH_VERSION:-A}" > "${RUNDIR}/path_version.txt"
 
     echo "--> flight done; stopping bag"
     sleep 3

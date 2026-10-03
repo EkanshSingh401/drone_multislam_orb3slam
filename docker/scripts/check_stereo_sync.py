@@ -97,8 +97,17 @@ def stream_stats(ts: list[float], label: str, nominal_hz: float) -> None:
     dropped = sum(round(g / nom) - 1 for g in gaps if round(g / nom) >= 2)
     print(f"  {label}: n={len(t)} over {span:.2f} s sim = {len(t)/span:.2f} Hz "
           f"(nominal {nominal_hz:g})")
-    print(f"      gap median={st.median(gaps)*1e3:.3f} ms  max={max(gaps)*1e3:.3f} ms"
-          f"  missing frames implied by gaps: {dropped}")
+    print(f"      gap min={min(gaps)*1e3:.3f} ms  median={st.median(gaps)*1e3:.3f} ms"
+          f"  max={max(gaps)*1e3:.3f} ms  missing frames implied by gaps: {dropped}")
+    # The MINIMUM gap is what OpenVINS's frame throttle must clear.
+    # ROS2Visualizer.cpp:565-568 drops a stereo pair when
+    #   timestamp < camera_last_timestamp + 1/track_frequency
+    # and does so SILENTLY, without updating camera_last_timestamp. So
+    # track_frequency must exceed 1/min_gap, not the nominal or average rate --
+    # Gazebo quantises stamps to the physics step, which makes the instantaneous
+    # period coarser than the average.
+    print(f"      -> OpenVINS track_frequency must EXCEED "
+          f"{1.0/min(gaps):.3f} Hz (1/min_gap) or pairs are dropped silently")
 
 
 def report(left: list[float], right: list[float], label: str,
