@@ -9,7 +9,14 @@ from launch_ros.actions import Node
 
 def _build_nodes(context):
     ns = LaunchConfiguration("robot_namespace").perform(context).strip()
-    use_sim_time = LaunchConfiguration("use_sim_time").perform(context)
+    # perform() yields a STRING, and rclcpp rejects a string for the bool
+    # parameter use_sim_time with InvalidParameterTypeException ("parameter
+    # {use_sim_time} is of type {bool}, setting it to {string} is not
+    # allowed"), which aborts static_transform_publisher with SIGABRT and
+    # leaves the TF tree empty. Convert explicitly.
+    use_sim_time = (
+        LaunchConfiguration("use_sim_time").perform(context).strip().lower()
+        in ("true", "1", "yes", "on"))
     if ns == "":
         ns = "uav_1"
 
