@@ -59,6 +59,15 @@ else
     BAG_PID=$!
     sleep 5
 
+    # Measure RTF and stream rates for THIS run. The gz stats topic's
+    # real_time_factor is instantaneous and bimodal (0.032 vs 0.538 on identical
+    # setups), so the only trustworthy figure is sim-time/wall-time over the
+    # window, which rate_monitor computes from /clock.
+    python3 -u /opt/scripts/rate_monitor.py --namespace "${NAMESPACE}" \
+        --duration "${MONITOR_DURATION:-900}" --window 15 \
+        --out "${RUNDIR}/rates.csv" > "${RUNDIR}/rates.log" 2>&1 &
+    MON_PID=$!
+
     echo "--> hovering ${SETTLE}s to let ORB-SLAM3 initialise, then flying"
     python3 /opt/scripts/fly_path.py \
         --side "${SIDE}" --alt "${ALT}" \
@@ -67,9 +76,32 @@ else
 
     echo "--> flight done; stopping bag"
     sleep 3
+    # ros2 bag record does NOT exit on SIGINT in this container; it needs
+    # SIGTERM. Previously the recorder kept running for ~6.5 min of sim time
+    # after landing, so ~88% of samples were of a stationary vehicle and the ATE
+    # was computed mostly over a parked drone. Escalate and verify.
     kill -INT "${BAG_PID}" 2>/dev/null || true
+    for _ in $(seq 1 10); do kill -0 "${BAG_PID}" 2>/dev/null || break; sleep 1; done
+    if kill -0 "${BAG_PID}" 2>/dev/null; then
+        echo "    SIGINT ignored, sending SIGTERM"
+        pkill -TERM -f "ros2 bag record" 2>/dev/null || true
+        kill -TERM "${BAG_PID}" 2>/dev/null || true
+    fi
+    for _ in $(seq 1 30); do kill -0 "${BAG_PID}" 2>/dev/null || break; sleep 1; done
+    kill -0 "${BAG_PID}" 2>/dev/null && echo "    WARNING recorder still alive"
     wait "${BAG_PID}" 2>/dev/null || true
+
+    kill -TERM "${MON_PID}" 2>/dev/null || true
+    wait "${MON_PID}" 2>/dev/null || true
     sleep 2
+
+    # metadata.yaml is not written if the recorder is killed hard; regenerate.
+    if [[ ! -f "${RUNDIR}/flight.bag/metadata.yaml" ]]; then
+        echo "--> no metadata.yaml, reindexing"
+        ros2 bag reindex "${RUNDIR}/flight.bag" -s mcap >/dev/null 2>&1 || true
+    fi
+    echo "--> measured rates for this run:"
+    sed -n "/RUN SUMMARY/,/=====$/p" "${RUNDIR}/rates.log" 2>/dev/null | sed "s/^/    /"
 fi
 
 BAG="${RUNDIR}/flight.bag"
@@ -120,13 +152,13 @@ run_evo() {  # run_evo <label> <est.tum>
 
     hr; echo "ATE (evo_ape) -- ${label} vs ground truth"; hr
     evo_ape tum "${RUNDIR}/gt.tum" "${est}" \
-        -a --t_max_diff 0.05 \
+        -a --t_max_diff 0.05 ${EVO_WINDOW:-} \
         --save_results "${RUNDIR}/ape_${label}.zip" \
         2>&1 | tee "${RUNDIR}/ape_${label}.txt"
 
     hr; echo "RPE (evo_rpe) -- ${label}, 1 m delta"; hr
     evo_rpe tum "${RUNDIR}/gt.tum" "${est}" \
-        -a --t_max_diff 0.05 --delta 1 --delta_unit m \
+        -a --t_max_diff 0.05 --delta 1 --delta_unit m ${EVO_WINDOW:-} \
         --save_results "${RUNDIR}/rpe_${label}.zip" \
         2>&1 | tee "${RUNDIR}/rpe_${label}.txt"
 }

@@ -13,6 +13,19 @@ WORLD="${WORLD:-forest}"
 NAMESPACE="${NAMESPACE:-uav_1}"
 PX4_INSTANCE="${PX4_INSTANCE:-1}"
 MODEL="${MODEL:-gz_x500_depth}"
+# Which rig to bring up. Overridable so the same script serves both the phase-1
+# x500_depth (RGB-D) drone and the phase-2 D455-mirror (stereo IR + depth + IMU)
+# drone.
+#   MODEL          PX4_SIM_MODEL, e.g. gz_x500_depth | gz_x500_d455
+#   BRIDGE_CFG     ros_gz_bridge YAML (default: multi_slam's installed config)
+#   PROBE_SENSOR   gz topic substring proving the cameras render
+#   PROBE_ROS      ROS topics that must carry data before SLAM starts
+#   START_SLAM     1 to launch ORB-SLAM3 RGB-D, 0 to skip (no stereo-inertial
+#                  node exists in the wrapper yet -- see docker/PATCHES.md)
+BRIDGE_CFG="${BRIDGE_CFG:-}"
+PROBE_SENSOR="${PROBE_SENSOR:-}"
+PROBE_ROS="${PROBE_ROS:-}"
+START_SLAM="${START_SLAM:-1}"
 MODEL_POSE="${MODEL_POSE:-0,0,0.25}"
 PX4_DIR="${PX4_DIR:-/opt/PX4-Autopilot}"
 WS="${WS:-/root/ws_offboard_control}"
@@ -37,6 +50,19 @@ while [[ $# -gt 0 ]]; do
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
+
+# Defaults that depend on which rig was selected.
+case "${MODEL}" in
+    *x500_d455*)
+        : "${PROBE_SENSOR:=sensor/infra1/image}"
+        : "${PROBE_ROS:=/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/depth/image_rect_raw /camera/imu}"
+        : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455.yaml}"
+        ;;
+    *)
+        : "${PROBE_SENSOR:=sensor/IMX214/image}"
+        : "${PROBE_ROS:=/${NAMESPACE}/rgb/image_raw /${NAMESPACE}/depth/image}"
+        ;;
+esac
 
 mkdir -p "${LOGDIR}"
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
@@ -145,9 +171,9 @@ wait_for "model ${EXPECTED_MODEL} spawned" 180 \
     bash -c "gz topic -l 2>/dev/null | grep -q '/world/${WORLD}/model/${EXPECTED_MODEL}/'" \
     || { tail -40 "${LOGDIR}/px4.log"; fail "PX4 did not spawn ${EXPECTED_MODEL}"; }
 
-wait_for "camera sensor topics present" 180 \
-    bash -c "gz topic -l 2>/dev/null | grep -q 'sensor/IMX214/image'" \
-    || { tail -40 "${LOGDIR}/gz_server.log"; fail "RGB camera sensor never appeared"; }
+wait_for "camera sensor topics present (${PROBE_SENSOR})" 240 \
+    bash -c "gz topic -l 2>/dev/null | grep -q '${PROBE_SENSOR}'" \
+    || { tail -40 "${LOGDIR}/gz_server.log"; fail "camera sensor ${PROBE_SENSOR} never appeared"; }
 
 # -----------------------------------------------------------------------------
 # 2b. MAVLink GCS (required before anything else touches PX4's MAVLink)
@@ -175,7 +201,9 @@ sleep 2
 # -----------------------------------------------------------------------------
 # 4. ros_gz_bridge  (RGB, depth, camera_info, points, /clock, ground truth)
 # -----------------------------------------------------------------------------
-BRIDGE_CFG="$(ros2 pkg prefix --share multi_slam)/config/gz_bridge.yaml"
+if [[ -z "${BRIDGE_CFG}" ]]; then
+    BRIDGE_CFG="$(ros2 pkg prefix --share multi_slam)/config/gz_bridge.yaml"
+fi
 [[ -f "${BRIDGE_CFG}" ]] || fail "bridge config not found at ${BRIDGE_CFG}"
 log "starting ros_gz_bridge with ${BRIDGE_CFG}"
 nohup ros2 run ros_gz_bridge parameter_bridge --ros-args \
@@ -189,13 +217,11 @@ wait_for "/clock is publishing" 90 \
     bash -c "timeout 10 ros2 topic echo /clock --once >/dev/null 2>&1" \
     || { tail -30 "${LOGDIR}/gz_bridge.log"; fail "/clock never arrived - use_sim_time nodes would hang"; }
 
-wait_for "${NAMESPACE} RGB images flowing" 120 \
-    bash -c "timeout 20 ros2 topic echo /${NAMESPACE}/rgb/image_raw --once >/dev/null 2>&1" \
-    || { tail -30 "${LOGDIR}/gz_bridge.log"; fail "no RGB images on /${NAMESPACE}/rgb/image_raw"; }
-
-wait_for "${NAMESPACE} depth images flowing" 120 \
-    bash -c "timeout 20 ros2 topic echo /${NAMESPACE}/depth/image --once >/dev/null 2>&1" \
-    || { tail -30 "${LOGDIR}/gz_bridge.log"; fail "no depth images on /${NAMESPACE}/depth/image"; }
+for t in ${PROBE_ROS}; do
+    wait_for "data flowing on ${t}" 180 \
+        bash -c "timeout 25 ros2 topic echo ${t} --once >/dev/null 2>&1" \
+        || { tail -30 "${LOGDIR}/gz_bridge.log"; fail "no data on ${t}"; }
+done
 
 # -----------------------------------------------------------------------------
 # 5. Static frames
@@ -216,6 +242,14 @@ wait_for "static TF published on /tf_static" 90 \
 # -----------------------------------------------------------------------------
 # 6. ORB-SLAM3 RGB-D agent (connects to the COVINS backend over TCP on start)
 # -----------------------------------------------------------------------------
+if [[ "${START_SLAM}" != "1" ]]; then
+    log "----------------------------------------------------------------"
+    log "stack up (START_SLAM=0, no SLAM node). logs in ${LOGDIR}/"
+    log "next: /opt/scripts/rate_monitor.py  or  /opt/scripts/check_rates.sh"
+    log "----------------------------------------------------------------"
+    exit 0
+fi
+
 log "starting ORB-SLAM3 RGB-D for ${NAMESPACE} (loads the ORB vocabulary; this takes ~30-60 s)"
 nohup ros2 launch orb_slam3_ros2_wrapper rgbd.launch.py \
     robot_namespace:="${NAMESPACE}" use_sim_time:=true \

@@ -187,7 +187,20 @@ RUN set -eux; \
 # -----------------------------------------------------------------------------
 # 5. Repository sources
 # -----------------------------------------------------------------------------
-COPY . ${WS}/src/
+# Copy the ROS packages EXPLICITLY rather than `COPY . ${WS}/src/`.
+#
+# A blanket copy means any edit anywhere in the repo -- including to
+# docker/scripts or docker/sim/models -- invalidates this layer and forces a full
+# rebuild of DBoW2, g2o, covins_comm, ORB-SLAM3 and the colcon workspace
+# (~15 min). Listing the packages keeps iteration on the Docker tooling cheap.
+COPY ORB_SLAM3                ${WS}/src/ORB_SLAM3
+COPY covins                   ${WS}/src/covins
+COPY multi_slam               ${WS}/src/multi_slam
+COPY orb_slam3_ros2_wrapper   ${WS}/src/orb_slam3_ros2_wrapper
+COPY orb_slam3_map_generator  ${WS}/src/orb_slam3_map_generator
+COPY px4_msgs                 ${WS}/src/px4_msgs
+COPY px4_ros_com              ${WS}/src/px4_ros_com
+COPY slam_msgs                ${WS}/src/slam_msgs
 
 # The repo commits prebuilt x86-64 .so files and CMake trees baked with the
 # original author's absolute paths. They cannot be reused on arm64 (verified:
@@ -305,7 +318,15 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # 10. Runtime environment
 # -----------------------------------------------------------------------------
 # Gazebo must find the PX4 models (x500_depth) and worlds (forest).
-ENV GZ_SIM_RESOURCE_PATH=${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds
+# Simulation-only models (the D455-mirror rig) and the configs generated from
+# its spec. Kept in a SIM-ONLY directory so they can never be mistaken for, or
+# overwrite, calibration files for real hardware.
+COPY docker/sim/models           /opt/sim_models
+COPY docker/sim/config_sim_only  /opt/config_sim_only
+
+# Our models come FIRST so they take precedence, then PX4's (x500_d455 includes
+# PX4's x500 base, so both paths are needed).
+ENV GZ_SIM_RESOURCE_PATH=/opt/sim_models:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds
 # No GPU passthrough on macOS Docker: force Mesa software rasterisation for both
 # the Gazebo sensor pipeline (ogre2) and RViz.
 ENV LIBGL_ALWAYS_SOFTWARE=1
