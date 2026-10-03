@@ -3,6 +3,8 @@
 #
 #   ./docker/scripts/run_experiment.sh 5              # phase-1 x500_depth rig
 #   RIG=d455 ./docker/scripts/run_experiment.sh 5     # phase-2 D455 stereo-inertial
+#   RIG=d455_stereo ./docker/scripts/run_experiment.sh 3   # phase-3 stereo-only
+#   PATH_VERSION=B RIG=d455 ./docker/scripts/run_experiment.sh 5
 #
 # Each run gets a genuinely fresh stack. bringup_sim.sh --stop verifies every
 # process is gone (escalating to SIGKILL) before the next run starts, so runs
@@ -15,6 +17,13 @@ N="${1:-${N:-5}}"
 COMPOSE="docker compose -f docker/compose.yaml"
 SIDE="${SIDE:-3}"; ALT="${ALT:-2.0}"; LEG_TIME="${LEG_TIME:-6}"; SETTLE="${SETTLE:-8}"
 RIG="${RIG:-depth}"
+# PATH_VERSION labels the scripted trajectory. Results from different path
+# versions are NOT comparable and must never be pooled into one mean:
+#   A  straight constant-velocity legs at fixed altitude (the original)
+#   B  yaw turns, altitude changes, varied acceleration (~3 min)
+# Path A leaves accelerometer bias and inertial scale weakly observable, which
+# is why B exists. See docker/OPEN_ISSUES.md s2.
+PATH_VERSION="${PATH_VERSION:-A}"
 
 case "${RIG}" in
   depth)
@@ -40,10 +49,22 @@ case "${RIG}" in
     # avoids that path entirely.
     USE_COVINS=0
     ;;
-  *) echo "RIG must be 'depth' or 'd455'" >&2; exit 2 ;;
+  d455_stereo)
+    # Phase 3 bisection rig: the SAME D455 hardware, ORB-SLAM3 in STEREO-ONLY
+    # mode. No IMU, and therefore no visual-inertial BA -- see PATCHES.md s35.
+    # Everything else is identical to the d455 case, which is what makes this a
+    # bisection rather than a separate experiment.
+    RIG_ENV="MODEL=gz_x500_d455 D455_DEPTH=0 SLAM_MODE=stereo"
+    EVAL_ENV="EST_TOPIC=/robot_pose_slam"
+    # Same reason as the d455 case: the vendored ORB_SLAM3 always constructs the
+    # COVINS Communicator, and an unreachable backend sends it down the
+    # ConnectToServer -> "return 2" -> close(stderr) path.
+    USE_COVINS=0
+    ;;
+  *) echo "RIG must be 'depth', 'd455' or 'd455_stereo'" >&2; exit 2 ;;
 esac
 
-OUT="docker/out/experiment_${RIG}_$(date +%Y%m%d-%H%M%S)"
+OUT="docker/out/experiment_${RIG}_path${PATH_VERSION}_$(date +%Y%m%d-%H%M%S)"
 mkdir -p "${OUT}"
 
 # --- guard: the container must be running the CURRENT scripts ----------------
@@ -64,10 +85,29 @@ if [[ ${STALE} -ne 0 ]]; then
     exit 1
 fi
 
-echo "=== experiment: rig=${RIG}  ${N} runs  side=${SIDE}m alt=${ALT}m leg=${LEG_TIME}s -> ${OUT} ==="
-echo "    rig env  : ${RIG_ENV}"
-echo "    eval env : ${EVAL_ENV}"
-echo "    covins   : ${USE_COVINS}"
+# A manifest, written BEFORE the first run, so a result directory can always be
+# traced back to the code and configuration that produced it. Without this the
+# only record of which path version a number came from was my memory of which
+# command I typed.
+{
+    echo "experiment:     $(basename "${OUT}")"
+    echo "started:        $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "rig:            ${RIG}"
+    echo "path_version:   ${PATH_VERSION}"
+    echo "runs:           ${N}"
+    echo "flight:         side=${SIDE}m alt=${ALT}m leg_time=${LEG_TIME}s settle=${SETTLE}s"
+    echo "rig_env:        ${RIG_ENV}"
+    echo "eval_env:       ${EVAL_ENV}"
+    echo "use_covins:     ${USE_COVINS}"
+    echo "git_commit:     $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+    echo "git_dirty:      $(test -n "$(git status --porcelain 2>/dev/null)" && echo yes || echo no)"
+    echo "sim_image:      $(docker image inspect drone-sim:jazzy-arm64 --format '{{.Id}}' 2>/dev/null || echo unknown)"
+    echo "world_gravity:  $(${COMPOSE} exec -T sim grep -ohE '<gravity>[^<]*</gravity>' \
+                              /opt/PX4-Autopilot/Tools/simulation/gz/worlds/forest.sdf 2>/dev/null | head -1)"
+} > "${OUT}/MANIFEST.txt"
+
+echo "=== experiment: rig=${RIG} path=${PATH_VERSION}  ${N} runs  side=${SIDE}m alt=${ALT}m leg=${LEG_TIME}s -> ${OUT} ==="
+sed 's/^/    /' "${OUT}/MANIFEST.txt"
 
 for i in $(seq 1 "${N}"); do
     echo
@@ -140,6 +180,7 @@ for i in $(seq 1 "${N}"); do
     ${COMPOSE} exec -T sim cp /out/logs/orb_slam3.log "${RUNDIR}/orb_slam3.log" 2>/dev/null || true
     cp -f "docker/out/eval/${B}/orb_slam3.log" "${OUT}/run${i}_slam.log" 2>/dev/null || true
     echo "${RUNDIR}" >> "${OUT}/rundirs.txt"
+    echo "${PATH_VERSION}" > "docker/out/eval/${B}/path_version.txt" 2>/dev/null || true
 
     if [[ -f "${OUT}/run${i}_imu_init.txt" ]]; then
         echo "run ${i}: $(tr '\n' ' ' < "${OUT}/run${i}_imu_init.txt")"

@@ -52,7 +52,7 @@ def px4_qos() -> QoSProfile:
 
 class ScriptedFlight(Node):
     def __init__(self, ns: str, target_system: int, side: float, alt: float,
-                 leg_time: float, settle_time: float):
+                 leg_time: float, settle_time: float, path_version: str = "A"):
         # use_sim_time must be supplied as a parameter OVERRIDE, not declared.
         # rclpy declares it automatically for every node, so calling
         # declare_parameter("use_sim_time", ...) raises
@@ -71,6 +71,9 @@ class ScriptedFlight(Node):
         self.side = side
         self.alt = alt
         self.leg_time = leg_time
+        self.path_version = path_version.strip().upper()
+        if self.path_version not in ("A", "B"):
+            raise ValueError(f"unknown path version {path_version!r}; expected A or B")
         self.settle_time = settle_time
 
         prefix = f"/{ns}" if ns else ""
@@ -111,21 +114,83 @@ class ScriptedFlight(Node):
         self.done = False
 
         # NED waypoints. PX4 local frame is North-East-DOWN, so "up" is negative z.
-        s, z = self.side, -abs(self.alt)
-        self.legs = [
-            # (north, east, down, yaw)
-            (0.0, 0.0, z, 0.0),
-            (s,   0.0, z, 0.0),
-            (s,   s,   z, math.pi / 2),
-            (0.0, s,   z, math.pi),
-            (0.0, 0.0, z, -math.pi / 2),
-            (0.0, 0.0, z, 0.0),
-        ]
+        # Each entry is (north, east, down, yaw, dwell_seconds); dwell defaults
+        # to leg_time so path A keeps its original timing exactly.
+        self.legs = (self._legs_path_a() if self.path_version == "A"
+                     else self._legs_path_b())
 
         self.timer = self.create_timer(1.0 / SETPOINT_HZ, self._tick)
         self.get_logger().info(
             f"namespace={prefix or '<root>'} target_system={target_system} "
             f"side={side} m alt={alt} m leg_time={leg_time}s")
+
+    # --- paths ---------------------------------------------------------------
+    def _legs_path_a(self):
+        """Path A: the original. A square at fixed altitude, yaw slewed per leg.
+
+        Kept byte-for-byte so phase-1/2 results stay comparable. Its weakness is
+        the reason path B exists: straight constant-velocity legs at one
+        altitude leave accelerometer bias and inertial scale weakly observable,
+        so a visual-inertial estimator gets little to work with. See
+        docker/OPEN_ISSUES.md s2.
+        """
+        s, z, L = self.side, -abs(self.alt), self.leg_time
+        return [
+            (0.0, 0.0, z, 0.0, L),
+            (s,   0.0, z, 0.0, L),
+            (s,   s,   z, math.pi / 2, L),
+            (0.0, s,   z, math.pi, L),
+            (0.0, 0.0, z, -math.pi / 2, L),
+            (0.0, 0.0, z, 0.0, L),
+        ]
+
+    def _legs_path_b(self):
+        """Path B: excited. Three figure-eight laps, each at a different
+        altitude, with yaw following the velocity and alternating dwell times.
+
+        Chosen to excite the states path A leaves unobservable:
+          * a lemniscate has continuously changing heading AND curvature, so
+            yaw rate and lateral acceleration are never constant -- unlike a
+            square, which is straight-line motion plus four corners;
+          * the three laps sit at different altitudes with climbs between them,
+            which exercises the vertical accelerometer axis that a fixed-
+            altitude path never moves;
+          * dwell alternates short/long, so the vehicle is accelerating or
+            decelerating for most of the flight rather than cruising.
+
+        Yaw is the numerical heading of the segment, so the airframe turns
+        through the whole lap rather than snapping at corners.
+        """
+        s = self.side
+        base = abs(self.alt)
+        laps = [base, base + 0.8, max(0.8, base - 0.5)]
+        pts_per_lap = 8
+        legs = []
+        for lap_i, lap_alt in enumerate(laps):
+            z = -lap_alt
+            for k in range(pts_per_lap):
+                th = 2.0 * math.pi * k / pts_per_lap
+                # Lemniscate of Gerono: crosses itself at the origin, which
+                # revisits the same scene from a different heading -- useful for
+                # loop closure as well as for excitation.
+                n = s * math.cos(th)
+                e = s * math.sin(th) * math.cos(th)
+                # Heading from the analytic derivative of the curve.
+                dn = -s * math.sin(th)
+                de = s * (math.cos(2.0 * th))
+                yaw = math.atan2(de, dn)
+                # Alternate dwell: short legs are flown aggressively, long legs
+                # settle. Varied acceleration is the point.
+                dwell = self.leg_time * (0.7 if k % 2 == 0 else 1.3)
+                legs.append((n, e, z, yaw, dwell))
+            # Explicit altitude change between laps, held long enough that the
+            # vertical motion is a real excitation and not a transient.
+            if lap_i + 1 < len(laps):
+                nz = -laps[lap_i + 1]
+                legs.append((s, 0.0, nz, 0.0, self.leg_time))
+        # Return to the origin at the base altitude so landing is predictable.
+        legs.append((0.0, 0.0, -base, 0.0, self.leg_time))
+        return legs
 
     # --- callbacks -----------------------------------------------------------
     def _on_status(self, msg: VehicleStatus) -> None:
@@ -236,16 +301,21 @@ class ScriptedFlight(Node):
                 self._goto_phase("fly")
 
         elif self.phase == "fly":
-            self._setpoint(*target)
-            if t > self.leg_time:
+            # target is (n, e, d, yaw, dwell): the setpoint takes the first four
+            # and the dwell is per leg, which is what lets path B alternate
+            # aggressive and settling legs.
+            self._setpoint(*target[:4])
+            if t > target[4]:
                 self.leg_index += 1
                 if self.leg_index >= len(self.legs):
                     self._goto_phase("land")
                 else:
+                    nxt = self.legs[self.leg_index]
                     self.get_logger().info(
                         f"leg {self.leg_index}/{len(self.legs)} -> "
-                        f"N={self.legs[self.leg_index][0]:.1f} "
-                        f"E={self.legs[self.leg_index][1]:.1f}")
+                        f"N={nxt[0]:+.2f} E={nxt[1]:+.2f} "
+                        f"alt={-nxt[2]:.2f} yaw={math.degrees(nxt[3]):+.0f}deg "
+                        f"dwell={nxt[4]:.1f}s")
                     self.phase_ticks = 0
 
         elif self.phase == "land":
@@ -318,6 +388,11 @@ def main() -> int:
     ap.add_argument("--leg-time", type=float, default=12.0, help="seconds per leg")
     ap.add_argument("--settle-time", type=float, default=3.0,
                     help="seconds to hold after the climb")
+    ap.add_argument("--path-version", default="A", choices=["A", "B", "a", "b"],
+                    help="A = original square at fixed altitude (default); "
+                         "B = three figure-eight laps at three altitudes with "
+                         "yaw following the velocity and alternating dwell, to "
+                         "excite the states A leaves unobservable")
     args = ap.parse_args()
 
     if args.namespace:
@@ -339,7 +414,7 @@ def main() -> int:
 
     rclpy.init()
     node = ScriptedFlight(ns, target_system, args.side, args.alt,
-                          args.leg_time, args.settle_time)
+                          args.leg_time, args.settle_time, args.path_version)
     try:
         while rclpy.ok() and not node.done:
             rclpy.spin_once(node, timeout_sec=0.1)

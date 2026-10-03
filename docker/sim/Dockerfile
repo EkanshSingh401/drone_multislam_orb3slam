@@ -337,6 +337,39 @@ ENV GZ_SIM_RESOURCE_PATH=/opt/sim_models:${PX4_DIR}/Tools/simulation/gz/models:$
 # the repo stays the single source of truth, and the link makes the provenance
 # obvious to anyone poking around in the container.
 RUN set -eux;     for m in d455 x500_d455 d455_nodepth x500_d455_nodepth; do         ln -sfn "/opt/sim_models/$m" "${PX4_DIR}/Tools/simulation/gz/models/$m";         test -f "${PX4_DIR}/Tools/simulation/gz/models/$m/model.sdf";     done;     echo "linked sim-only models into PX4_GZ_MODELS"
+
+# -----------------------------------------------------------------------------
+# Gravity: align the simulated worlds with ORB-SLAM3's hardcoded constant.
+# -----------------------------------------------------------------------------
+# PX4's worlds ship <gravity>0 0 -9.8</gravity>. ORB-SLAM3 hardcodes
+# ORB_SLAM3/include/ImuTypes.h:46  const float GRAVITY_VALUE = 9.81;
+# with no way to configure it, while OpenVINS reads gravity_mag from its YAML.
+# Left alone, a VIO comparison on this rig would hand OpenVINS the correct
+# gravity and ORB-SLAM3 a 0.01 m/s^2 error -- a difference in the estimators'
+# inputs, not in their estimation, and enough to bias the gravity-direction
+# state that ORB-SLAM3's VIBA solves for.
+#
+# The world is edited rather than renamed on purpose. The generated bridge
+# config embeds the world name in nine gz topic paths
+# (/world/forest/model/.../image, /world/forest/dynamic_pose/info, ...), so a
+# "forest_g981" world would change the topic names at the same time as the
+# gravity and stop this being a one-variable experiment.
+#
+# Asserted both ways: the build fails if the expected value is absent (PX4
+# changed its worlds) or if any -9.8 survives the edit.
+RUN set -eux; \
+    cd "${PX4_DIR}/Tools/simulation/gz/worlds"; \
+    for w in *.sdf; do \
+        if grep -q '<gravity>0 0 -9.8</gravity>' "$w"; then \
+            sed -i 's|<gravity>0 0 -9.8</gravity>|<gravity>0 0 -9.81</gravity>|g' "$w"; \
+            echo "  patched gravity in $w"; \
+        fi; \
+    done; \
+    grep -q '<gravity>0 0 -9.81</gravity>' forest.sdf \
+        || { echo "FATAL: forest.sdf has no -9.81 gravity after patch"; exit 1; }; \
+    ! grep -rq '<gravity>0 0 -9.8</gravity>' . \
+        || { echo "FATAL: a world still carries -9.8 gravity"; exit 1; }; \
+    echo "gravity aligned to ORB-SLAM3 GRAVITY_VALUE=9.81 in all PX4 worlds"
 # No GPU passthrough on macOS Docker: force Mesa software rasterisation for both
 # the Gazebo sensor pipeline (ogre2) and RViz.
 ENV LIBGL_ALWAYS_SOFTWARE=1
