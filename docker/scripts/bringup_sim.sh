@@ -59,7 +59,10 @@ while [[ $# -gt 0 ]]; do
             # silently degrade run over run.
             for attempt in 1 2 3; do
                 sleep 2
-                remaining=$(pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' | wc -l | tr -d ' ')
+                # pgrep exits non-zero when NOTHING matches, which under
+                # `set -eo pipefail` aborted this very function -- so --stop
+                # reported failure precisely when the stack was already clean.
+                remaining=$({ pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' || true; } | wc -l | tr -d ' ')
                 [[ "${remaining}" == "0" ]] && break
                 echo "  ${remaining} process(es) still alive, escalating (attempt ${attempt})"
                 pkill -KILL -f 'gz sim' 2>/dev/null || true
@@ -70,7 +73,7 @@ while [[ $# -gt 0 ]]; do
                 pkill -KILL -f static_transform_publisher 2>/dev/null || true
                 pkill -KILL -f px4_gcs.py 2>/dev/null || true
             done
-            remaining=$(pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' | wc -l | tr -d ' ')
+            remaining=$({ pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' || true; } | wc -l | tr -d ' ')
             if [[ "${remaining}" != "0" ]]; then
                 echo "WARNING: ${remaining} process(es) survived --stop" >&2
                 exit 1

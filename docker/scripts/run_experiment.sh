@@ -78,7 +78,10 @@ for i in $(seq 1 "${N}"); do
     fi
 
     # Verified teardown, then a fresh gz server.
-    ${COMPOSE} exec -T sim /opt/scripts/bringup_sim.sh --stop 2>&1 | tail -1 | sed "s/^/run ${i}: /"
+    # Tolerate a non-zero --stop: it is informational here, and `set -e` must
+    # not abort the whole experiment over it.
+    ${COMPOSE} exec -T sim /opt/scripts/bringup_sim.sh --stop 2>&1 | tail -1 \
+        | sed "s/^/run ${i}: /" || true
     ${COMPOSE} exec -T sim rm -f /out/logs/bringup.log /out/logs/orb_slam3.log /out/covins/KF_0_ftum.csv
     ${COMPOSE} exec -d sim bash -c "${RIG_ENV} /opt/scripts/bringup_sim.sh > /out/logs/bringup.log 2>&1; echo EXIT=\$? >> /out/logs/bringup.log"
 
