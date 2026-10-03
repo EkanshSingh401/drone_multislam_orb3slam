@@ -501,6 +501,128 @@ So the correctness fix is also what makes this tractable without a GPU. The
 resolution change is nonetheless a deviation from the model as pinned, and is
 flagged as such.
 
+## 23. `use_sim_time` was declared but never applied to the SLAM node
+
+*File: `orb_slam3_ros2_wrapper/launch/rgbd.launch.py`*
+
+`rgbd.launch.py` declares a `use_sim_time` launch argument, but the value
+appears in **none** of the three places that would reach the node: not in
+`param_substitutions`, not in `params/ros_params/gazebo-rgbd-ros-params.yaml`,
+and not in the `Node(...)` `parameters` list. So the SLAM node ran on the wall
+clock no matter what was passed. Measured before the fix:
+
+```
+/ros_gz_bridge                 use_sim_time=True
+/uav_1/ORB_SLAM3_RGBD_ROS2     use_sim_time=False
+```
+
+This silently invalidates any evaluation. Ground truth is bridged from Gazebo
+with `use_sim_time:=true`, i.e. on sim time, while the estimator stamped its
+poses with wall-clock time. At the measured real-time factor the two clocks
+diverge by ~30x, so `evo` would be aligning stamps that do not correspond.
+Nothing crashes; the ATE just comes out meaningless.
+
+Fixed by passing `{'use_sim_time': <bool>}` as its own parameter dict after
+`configured_params`, so it applies regardless of whether `RewrittenYaml`
+inserts keys that are absent from the source YAML. Verified after the fix:
+`use_sim_time=True` on every node that has the parameter.
+
+## 24. PX4 must run with `-d`; its shell spam starved its own scheduler
+
+*File: `docker/scripts/bringup_sim.sh`*
+
+Without `-d` (daemon mode) PX4 starts its interactive `pxh` shell and writes
+the prompt plus an ANSI clear-line sequence to the redirected log on every
+loop. A ~45 minute run produced a **72 MB** `px4.log` of nothing but prompts;
+the same run with `-d` produces **~6 KB**.
+
+This was not cosmetic. That write amplification onto a bind-mounted volume
+starved PX4's own scheduler, and it is what produced persistent, arming-blocking
+preflight failures:
+
+```
+Preflight Fail: No valid data from Gyro 0 / Accel 0 / Baro 0 / Compass 0
+Preflight Fail: High Gyro Bias
+Preflight Fail: Attitude failure (roll)
+Preflight Fail: height estimate not stable
+```
+
+With `-d` these are gone. What remains is `No connection to the GCS` (expected,
+no QGroundControl attached) and a transient `ekf2 missing data` at startup.
+Confirmed healthy afterwards: `sensor_combined` at 21.7 Hz, `vehicle_attitude`
+at 10.8 Hz, `arming_state: 1` (disarmed, i.e. responsive).
+
+## 25. PX4 publishes VERSIONED uORB topic names
+
+*File: `docker/scripts/fly_path.py`*
+
+The pinned PX4 (`main` @ `6bc24c8c`) is in the message-versioning era — which is
+also why the pinned `px4_msgs` contains `MessageFormatRequest`/
+`MessageFormatResponse`. Its **output** topics carry a `_v1` suffix:
+
+```
+/px4_1/fmu/out/vehicle_status_v1          -> px4_msgs/msg/VehicleStatus
+/px4_1/fmu/out/vehicle_local_position_v1  -> px4_msgs/msg/VehicleLocalPosition
+```
+
+The unversioned names simply do not exist, so anything subscribing to
+`vehicle_status` waits forever and never learns the vehicle is ready. The
+*input* topics (`offboard_control_mode`, `trajectory_setpoint`,
+`vehicle_command`) are **not** versioned. Message types are unchanged.
+
+`fly_path.py` now subscribes to both spellings so it works against either
+firmware generation.
+
+## 26. Two regressions I introduced, and how they presented
+
+Recorded because both failed *silently* rather than loudly, which is the
+dangerous kind.
+
+**(a) A comment broke a shell line continuation.** Adding an explanatory
+comment between the backslash-continued `PX4_*` env assignments and the `nohup`
+line severed the continuation. bash then treated the assignments as a standalone
+statement and launched PX4 with **none** of them. PX4 logged `No autostart ID
+found`, fell back to the **SIH** simulator (`INFO [init] SIH simulator`), and ran
+with no Gazebo model and no sensors at all — while still appearing to be "PX4
+running". Now uses an explicit `env ...` prefix, which cannot break this way.
+
+**(b) A bool parameter passed as a string killed the TF tree.** The
+`use_sim_time` value in `static_frames.launch.py` came from
+`LaunchConfiguration(...).perform(context)`, which returns a **string**. rclcpp
+rejects that for a bool parameter:
+
+```
+rclcpp::exceptions::InvalidParameterTypeException
+  what(): parameter {use_sim_time} is of type {bool}, setting it to {string}
+  is not allowed.
+```
+
+All three `static_transform_publisher` processes aborted with SIGABRT (exit -6)
+~1 s after launch, leaving `/tf_static` empty. Bringup still reported success
+because that step only `sleep`-ed instead of verifying. Fixed by coercing to
+bool, **and** `bringup_sim.sh` now gates on
+`ros2 topic info /tf_static` reporting a non-zero publisher count.
+
+---
+
+## Measured performance on this host (no GPU, Mesa llvmpipe)
+
+All numbers measured, not estimated. `forest` world, single `x500_depth`.
+
+| Configuration | Gazebo RTF | `/uav_1/rgb/image_raw` |
+|---|---|---|
+| RGB 1920x1080, no SLAM | 0.028 | 1.53 Hz |
+| RGB 640x480, no SLAM | ~0.6 (oscillating 0.07-1.0) | 8.38 Hz |
+| RGB 640x480, full stack incl. ORB-SLAM3 | **0.032** | 4.93 Hz |
+
+With the full stack running, depth measures 6.34 Hz and the ORB-SLAM3 pose
+output `/uav_1/robot_pose_slam` measures **6.40 Hz** — i.e. the frontend tracks
+and keeps up with the frames it is given.
+
+The practical consequence: **1 s of simulated time costs roughly 30 s of wall
+clock** with everything running. Scripted flights must be scaled accordingly,
+and this is a property of software rasterisation, not of the repo.
+
 ---
 
 ## Pinned versions, for the record

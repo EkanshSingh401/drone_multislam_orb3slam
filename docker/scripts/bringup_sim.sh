@@ -29,6 +29,7 @@ while [[ $# -gt 0 ]]; do
             pkill -f parameter_bridge 2>/dev/null || true
             pkill -f static_transform_publisher 2>/dev/null || true
             pkill -f MicroXRCEAgent 2>/dev/null || true
+            pkill -f px4_gcs.py 2>/dev/null || true
             pkill -f 'bin/px4' 2>/dev/null || true
             pkill -f 'gz sim' 2>/dev/null || true
             pkill -f 'ruby.*gz' 2>/dev/null || true
@@ -113,8 +114,24 @@ cd "${PX4_DIR}"
 # the continuation: bash then treats the assignments as a standalone statement
 # and runs px4 with NONE of them, which makes PX4 log "No autostart ID found"
 # and fall back to the SIH simulator (no Gazebo model, no sensors at all).
+# PX4_PARAM_<NAME> is applied by PX4's rcS via `param set` (see rcS: "Allow
+# overriding parameters via env variables"). Two are required to arm in OFFBOARD
+# on a headless SITL rig with no RC transmitter and no ground station:
+#
+#   COM_RCL_EXCEPT=4   bitmask of modes exempt from RC-loss failsafe; bit 2 is
+#                      Offboard. Without it, arming is blocked by the
+#                      manual_control_signal_lost failsafe flag.
+#   NAV_DLL_ACT=0      disable the datalink-loss action, which otherwise blocks
+#                      arming via gcs_connection_lost.
+#
+# Both were confirmed necessary by measurement, not guessed: px4_arm_test.py
+# showed OFFBOARD being accepted (nav_state 4 -> 14) while arming failed with
+# exactly those two flags set, plus auto_mission_missing (irrelevant here --
+# offboard needs no mission).
 env PX4_GZ_STANDALONE=1 \
     PX4_SYS_AUTOSTART=4001 \
+    PX4_PARAM_COM_RCL_EXCEPT=4 \
+    PX4_PARAM_NAV_DLL_ACT=0 \
     PX4_SIM_MODEL="${MODEL}" \
     PX4_GZ_WORLD="${WORLD}" \
     PX4_GZ_MODEL_POSE="${MODEL_POSE}" \
@@ -131,6 +148,22 @@ wait_for "model ${EXPECTED_MODEL} spawned" 180 \
 wait_for "camera sensor topics present" 180 \
     bash -c "gz topic -l 2>/dev/null | grep -q 'sensor/IMX214/image'" \
     || { tail -40 "${LOGDIR}/gz_server.log"; fail "RGB camera sensor never appeared"; }
+
+# -----------------------------------------------------------------------------
+# 2b. MAVLink GCS (required before anything else touches PX4's MAVLink)
+# -----------------------------------------------------------------------------
+# PX4 refuses to arm with "Preflight Fail: No connection to the GCS" whenever
+# NAV_DLL_ACT > 0, and the x500 airframe leaves it at 2. Attaching a minimal GCS
+# satisfies that check and lets us set NAV_DLL_ACT=0 over MAVLink.
+#
+# This MUST start before any other MAVLink client: PX4's MAVLink instance locks
+# onto the first partner's source address:port and never re-learns, so a second
+# client is simply ignored. Starting it here claims the slot.
+log "starting MAVLink GCS (satisfies the GCS arming check)"
+nohup python3 -u /opt/scripts/px4_gcs.py --serve > "${LOGDIR}/px4_gcs.log" 2>&1 &
+wait_for "GCS attached to PX4" 120 \
+    bash -c "grep -qE 'from system [0-9]+' '${LOGDIR}/px4_gcs.log'" \
+    || log "WARNING: GCS did not attach; arming will likely be denied"
 
 # -----------------------------------------------------------------------------
 # 3. Micro XRCE-DDS agent (PX4 uORB <-> ROS 2, needed for offboard control)
@@ -171,7 +204,14 @@ log "starting static frames for ${NAMESPACE}"
 nohup ros2 launch multi_slam static_frames.launch.py \
     robot_namespace:="${NAMESPACE}" use_sim_time:=true \
     > "${LOGDIR}/static_frames.log" 2>&1 &
-sleep 3
+
+# Verify, do not just sleep. These three static_transform_publisher processes
+# previously aborted with SIGABRT about a second after launch (a bool parameter
+# passed as a string), leaving /tf_static empty -- and because this step only
+# slept, bringup still reported success with no TF tree at all.
+wait_for "static TF published on /tf_static" 90 \
+    bash -c "ros2 topic info /tf_static 2>/dev/null | grep -qE 'Publisher count: [1-9]'" \
+    || { tail -20 "${LOGDIR}/static_frames.log"; fail "static TF publishers did not come up"; }
 
 # -----------------------------------------------------------------------------
 # 6. ORB-SLAM3 RGB-D agent (connects to the COVINS backend over TCP on start)

@@ -21,6 +21,7 @@ import sys
 
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -52,8 +53,18 @@ def px4_qos() -> QoSProfile:
 class ScriptedFlight(Node):
     def __init__(self, ns: str, target_system: int, side: float, alt: float,
                  leg_time: float, settle_time: float):
-        super().__init__("scripted_flight")
-        self.declare_parameter("use_sim_time", True)
+        # use_sim_time must be supplied as a parameter OVERRIDE, not declared.
+        # rclpy declares it automatically for every node, so calling
+        # declare_parameter("use_sim_time", ...) raises
+        # ParameterAlreadyDeclaredException and kills the node in its
+        # constructor. It has to be true here: the phase timeouts below are
+        # measured on the node clock, and on a GPU-less host the simulator runs
+        # far slower than wall time, so wall-clock budgets would expire long
+        # before PX4 had a chance to react.
+        super().__init__(
+            "scripted_flight",
+            parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)],
+        )
 
         self.ns = ns
         self.target_system = target_system
