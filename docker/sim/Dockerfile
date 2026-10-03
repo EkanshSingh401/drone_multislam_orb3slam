@@ -327,6 +327,16 @@ COPY docker/sim/config_sim_only  /opt/config_sim_only
 # Our models come FIRST so they take precedence, then PX4's (x500_d455 includes
 # PX4's x500 base, so both paths are needed).
 ENV GZ_SIM_RESOURCE_PATH=/opt/sim_models:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds
+
+# PX4 does NOT look on GZ_SIM_RESOURCE_PATH to spawn a model. Its gz_bridge
+# builds the path "${PX4_GZ_MODELS}/<model>/model.sdf" and hands that to Gazebo,
+# so a model that only exists elsewhere fails with
+#   [Err] Unable to find uri[file:///opt/PX4-Autopilot/Tools/simulation/gz/
+#         models/x500_d455/model.sdf]
+# even though `gz` itself could resolve it. Symlink our models into PX4's tree:
+# the repo stays the single source of truth, and the link makes the provenance
+# obvious to anyone poking around in the container.
+RUN set -eux;     for m in d455 x500_d455; do         ln -sfn "/opt/sim_models/$m" "${PX4_DIR}/Tools/simulation/gz/models/$m";         test -f "${PX4_DIR}/Tools/simulation/gz/models/$m/model.sdf";     done;     echo "linked sim-only models into PX4_GZ_MODELS"
 # No GPU passthrough on macOS Docker: force Mesa software rasterisation for both
 # the Gazebo sensor pipeline (ogre2) and RViz.
 ENV LIBGL_ALWAYS_SOFTWARE=1

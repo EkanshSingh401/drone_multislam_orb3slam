@@ -38,6 +38,18 @@ def parse_rates(path: Path) -> dict[str, float]:
     m = re.search(r"simulated duration\s*:\s*([0-9.]+)", txt)
     if m:
         out["sim_s"] = float(m.group(1))
+
+    # Fallback: if the RUN SUMMARY is missing (the monitor was killed before it
+    # could print), recover the figures from the last per-window progress line,
+    # which has the form
+    #   [  165.2s wall |    47.6s sim | RTF 0.288]
+    if "rtf" not in out or "sim_s" not in out:
+        wins = re.findall(
+            r"\[\s*([0-9.]+)s wall \|\s*([0-9.]+)s sim \| RTF\s*([0-9.]+)\]", txt)
+        if wins:
+            _wall, sim, rtf = wins[-1]
+            out.setdefault("rtf", float(rtf))
+            out.setdefault("sim_s", float(sim))
     for name, hz in re.findall(r"^\s+(/\S+)\s+([0-9.]+) Hz wall", txt, re.M):
         out[name] = float(hz)
     return out

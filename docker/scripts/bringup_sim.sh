@@ -166,7 +166,11 @@ env PX4_GZ_STANDALONE=1 \
 
 # PX4 names the spawned model "<model>_<instance>", e.g. x500_depth_1, which is
 # exactly what multi_slam/config/gz_bridge.yaml subscribes to.
-EXPECTED_MODEL="x500_depth_${PX4_INSTANCE}"
+# Derive the spawned model name from MODEL rather than hardcoding x500_depth.
+# PX4 spawns "<PX4_SIM_MODEL with the gz_ prefix stripped>_<instance>", so
+# gz_x500_d455 -i 1 -> x500_d455_1. Hardcoding it made the D455 rig wait for a
+# model that never appears.
+EXPECTED_MODEL="${MODEL#gz_}_${PX4_INSTANCE}"
 wait_for "model ${EXPECTED_MODEL} spawned" 180 \
     bash -c "gz topic -l 2>/dev/null | grep -q '/world/${WORLD}/model/${EXPECTED_MODEL}/'" \
     || { tail -40 "${LOGDIR}/px4.log"; fail "PX4 did not spawn ${EXPECTED_MODEL}"; }

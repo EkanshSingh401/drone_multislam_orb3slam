@@ -152,11 +152,20 @@ def main() -> int:
     else:
         print("rate_monitor: clock-only (flight-safe); RTF = sim/wall", flush=True)
     end = time.time() + args.duration
+    # rclpy.init() installs its own SIGINT handler, so an interrupt surfaces as
+    # ExternalShutdownException out of spin_once rather than KeyboardInterrupt.
+    # Catching only KeyboardInterrupt meant the RUN SUMMARY -- which carries the
+    # run's real-time factor -- was never printed when record_and_eval stopped
+    # the monitor, and the aggregate showed "nan".
+    try:
+        from rclpy.executors import ExternalShutdownException
+    except ImportError:                                   # pragma: no cover
+        ExternalShutdownException = RuntimeError          # type: ignore
     try:
         while rclpy.ok() and time.time() < end and not stop["now"]:
             rclpy.spin_once(n, timeout_sec=0.05)
             n.tick()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
 
     wall = time.time() - n.wall_first
@@ -182,8 +191,15 @@ def main() -> int:
                          f"hz_sim={tot/sim if sim>0 else 0:.3f}\n")
         print(f"rate_monitor: wrote {args.out}")
 
-    n.destroy_node()
-    rclpy.shutdown()
+    try:
+        n.destroy_node()
+    except Exception:
+        pass
+    try:
+        if rclpy.ok():
+            rclpy.shutdown()
+    except Exception:
+        pass
     return 0
 
 
