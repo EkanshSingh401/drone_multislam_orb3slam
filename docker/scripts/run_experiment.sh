@@ -31,6 +31,13 @@ case "${RIG}" in
     RIG_ENV="MODEL=gz_x500_d455 D455_DEPTH=0 SLAM_MODE=stereo_inertial"
     # The stereo-inertial node runs in the root namespace.
     EVAL_ENV="EST_TOPIC=/robot_pose_slam"
+    # We do not EVALUATE COVINS on this rig, but the backend must still be
+    # listening. The vendored ORB_SLAM3 always constructs the COVINS
+    # Communicator, and covins_comm's ConnectToServer() returns the literal 2 as
+    # its error code -- which ORB-SLAM3 then uses as newfd_. File descriptor 2
+    # is stderr, so the comm thread "connects" to stderr and later close()s it,
+    # corrupting the process's standard error. Keeping the backend reachable
+    # avoids that path entirely.
     USE_COVINS=0
     ;;
   *) echo "RIG must be 'depth' or 'd455'" >&2; exit 2 ;;
@@ -66,7 +73,8 @@ for i in $(seq 1 "${N}"); do
     echo
     echo "################ RUN ${i}/${N} (${RIG}) ################"
 
-    if [[ "${USE_COVINS}" == "1" ]]; then
+    # Always start the backend -- see the note in the d455 case above.
+    if true; then
         ${COMPOSE} restart covins-backend >/dev/null 2>&1
         sleep 12
         ${COMPOSE} exec -d covins-backend /opt/scripts/run_backend.sh

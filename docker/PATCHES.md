@@ -807,3 +807,251 @@ Everything in steps 1-6 was completed and measured without it.
   which is safe between amd64 and arm64 since both are little-endian LP64, but
   would break against a big-endian or ILP32 peer. Here both containers are
   arm64, so the question is moot.
+
+---
+
+# Phase 2 (D455-mirror rig, stereo-inertial)
+
+## 31. Upstream ORB-SLAM3 bug: `System::GetTimeFromIMUInit()` segfaults before the first keyframe
+
+**Not patched in vendored code.** Worked around in our own node. Reported here
+because it is a genuine upstream defect, not an arm64 or packaging artefact.
+
+`LocalMapping::mpCurrentKeyFrame` is a raw pointer:
+
+```
+ORB_SLAM3/include/LocalMapping.h:185:    KeyFrame* mpCurrentKeyFrame;
+```
+
+It appears in **neither** the constructor's initialiser list nor its body
+(`ORB_SLAM3/src/LocalMapping.cc:33-47`); it is first assigned in
+`LocalMapping::ProcessNewKeyFrame()`. Until the first keyframe reaches the local
+mapper it therefore holds **indeterminate** memory.
+
+`GetCurrKFTime()` guards with a null test, which an indeterminate non-null value
+passes:
+
+```
+ORB_SLAM3/src/LocalMapping.cc:1592
+double LocalMapping::GetCurrKFTime()
+{
+    if (mpCurrentKeyFrame)
+        return mpCurrentKeyFrame->mTimeStamp;   // <-- dereferences garbage
+    else
+        return 0.0;
+}
+```
+
+and `System::GetTimeFromIMUInit()` calls it **before** testing whether the IMU
+is initialised, so the short-circuit that would have made it safe never gets a
+chance:
+
+```
+ORB_SLAM3/src/System.cc:1454
+double System::GetTimeFromIMUInit()
+{
+    double aux = mpLocalMapper->GetCurrKFTime() - mpLocalMapper->mFirstTs;  // <-- unconditional
+    if ((aux > 0.) && mpAtlas->isImuInitialized())
+        return mpLocalMapper->GetCurrKFTime() - mpLocalMapper->mFirstTs;
+    else
+        return 0.f;
+}
+```
+
+### Symptom
+
+Every stereo-inertial run died at the same point — immediately after ORB-SLAM3
+printed `not IMU meas`, i.e. on the frames *before* stereo initialisation
+succeeds — with `exit code -11` and no diagnostic:
+
+```
+[stereo_inertial-1] [INFO] ... first stereo pair at t=56.332000 with 12 IMU samples
+[stereo_inertial-1] not IMU meas
+[ERROR] [stereo_inertial-1]: process has died [pid 4061, exit code -11, ...]
+```
+
+`not IMU meas` is a red herring: it comes from
+`Tracking::StereoInitialization()` (`ORB_SLAM3/src/Tracking.cc:2364`), which for
+`IMU_STEREO` requires both `mCurrentFrame.mpImuPreintegrated` and
+`mLastFrame.mpImuPreintegrated` and otherwise merely `return`s. On the first
+frames nothing precedes them, so it is expected and benign. The crash is the
+next statement in our callback. `gdb` inside the sim container gave the answer:
+
+```
+Thread 27 "stereo_inertial" received signal SIGSEGV, Segmentation fault.
+#0  ORB_SLAM3::LocalMapping::GetCurrKFTime ()   from .../libORB_SLAM3.so
+#1  ORB_SLAM3::System::GetTimeFromIMUInit ()    from .../libORB_SLAM3.so
+#2  ORB_SLAM3_Wrapper::StereoInertialSlamNode::StereoCallback (...)
+#3  message_filters ... ApproximateTime::publishCandidate ()
+```
+
+Two earlier hypotheses were checked and **rejected** before this:
+
+- *Config shape.* Compared the generated
+  `orbslam3_d455_stereo_inertial.yaml` against ORB-SLAM3's own
+  `Examples/Stereo-Inertial/RealSense_D435i.yaml`: identical structure
+  (`Camera.type: "Rectified"` + `Camera1.*` + `Stereo.b` + `Stereo.ThDepth` +
+  `IMU.T_b_c1` + IMU noise + `IMU.Frequency`). Not the cause.
+- *COVINS.* The crash also occurs on runs where the agent connects cleanly
+  (`newfd_: 17`, `Set Client ID: 0`), so it is independent of the
+  `ConnectToServer` → `return 2` → close-stderr path described in §25.
+
+### Workaround
+
+Test `Atlas::isImuInitialized()` — public and mutex-guarded
+(`ORB_SLAM3/src/Atlas.cc:296`) — **before** calling `GetTimeFromIMUInit()`:
+
+```cpp
+if (!imuInitialised_ && interface()->slam()->GetAtlas()->isImuInitialized())
+{
+    const double tFromInit = interface()->slam()->GetTimeFromIMUInit();
+    ...
+}
+```
+
+That ordering is sufficient, not merely probable: `isImuInitialized()` can only
+become true from `LocalMapping::InitializeIMU()`, which runs *after*
+`ProcessNewKeyFrame()` has assigned `mpCurrentKeyFrame`. `System::GetAtlas()` is
+already public (`ORB_SLAM3/include/System.h:191`), so no vendored header or
+algorithm file is touched.
+
+A real upstream fix would be a one-word reorder of the `&&` in
+`System::GetTimeFromIMUInit()` plus `mpCurrentKeyFrame(nullptr)` in
+`LocalMapping`'s initialiser list. Both are left alone here deliberately: the
+standing rule for this reproduction is not to rewrite vendored algorithm code,
+and the workaround is strictly in our own node.
+
+### Confirmation
+
+With the guard in place, 200 s against the live `x500_d455_nodepth` rig:
+
+```
+newfd_: 17 / --> Set Client ID: 2
+first stereo pair at t=113.160000 with 7 IMU samples
+IMU INITIALISED at frame t=115.600000 (2.440 s after first frame, frame #75, 504 IMU samples seen)
+STEREO-INERTIAL node stopped. frames=1555 imu_samples=10276 imu_initialised=yes
+```
+
+No segfault. The 87 subsequent `Not enough motion for initializing. Reseting...`
+messages are correct behaviour for that test: the drone was parked, so
+`LocalMapping`'s `(mTinit < 10.f) && (dist < 0.02)` check keeps resetting the
+active map. They disappear once the scripted flight actually moves the airframe.
+
+## 32. ORB-SLAM3 consumes ~8 of the 30 published stereo Hz
+
+The sensors deliver a nominal 30.3 Hz per IR imager in simulated time (§
+*Measured performance*), but the node's own tracking-frequency report settles at
+**7–8 frames/s**. The deficit is not dropped Gazebo frames: it is ORB-SLAM3's
+per-frame cost at 848×480 stereo on arm64 with no GPU. `message_filters` keeps
+the newest pairs and the rest are discarded at the synchroniser, which is the
+correct degradation — but it means the effective frame rate feeding the baseline
+is ~8 Hz, and OpenVINS must be compared at the same input rate, not at 30 Hz.
+
+## 33. Two defects in `record_and_eval.sh` found by the first stereo-inertial experiment
+
+Both mine, both produced wrong-or-missing numbers rather than errors.
+
+**(a) `evo --save_results` prompts on an existing archive.** `run_experiment.sh`
+calls this script twice per run (the flight, then `--eval-only`), so the second
+pass always found its own `.zip` from the first and asked to overwrite. On a
+non-tty the prompt hits EOF:
+
+```
+[WARNING] /out/eval/.../ape_orbslam3.zip exists, overwrite?
+EOFError: EOF when reading a line
+[ERROR] evo module evo.main_ape crashed
+```
+
+`evo` prints the statistics **before** that point and `aggregate_results.py`
+parses them out of the `.txt`, so no number was ever wrong — but evo exited
+non-zero and the run was reported as "eval returned 1". The result archives are
+now removed before each evo call.
+
+**(b) An unbounded `wait` on a recorder that ignores every catchable signal.**
+The stop ladder was SIGINT → SIGTERM → `echo WARNING` → `wait "${BAG_PID}"`.
+`wait` on a live child has **no timeout**, so when both signals failed the script
+blocked indefinitely. Run 5 of the first stereo-inertial experiment wedged for 36
+minutes: the flight ended at 18:50 and the mcap was still growing at 19:26.
+
+`/proc/<pid>/status` on the stuck recorder shows the handler situation is not
+what the old comment assumed:
+
+```
+State:  S (sleeping)
+SigIgn: 0000000001001006     # bit 2 set -> SIGINT IGNORED
+SigCgt: 0000000100004000     # bit 15 set -> SIGTERM CAUGHT
+```
+
+So rosbag2 *does* install a SIGTERM handler; it simply did not stop the
+recording. The ladder was missing its last rung. Now: SIGINT → SIGTERM →
+**SIGKILL**, and if a process somehow survives SIGKILL the script marks the run
+`INVALID_RECORDER_OVERRUN` and refuses to `wait` on it. SIGKILL costs only
+`metadata.yaml`, which the existing `ros2 bag reindex` regenerates.
+
+Why this matters for the numbers and not just for the clock: an SE(3)-aligned
+ATE **rewards** stationary samples. Run 5's trajectory held 18,300 poses against
+~1,900 for every other run, almost all of a parked vehicle, and it scored the
+*best* ATE in the set (0.249 m against a 1.369 m four-run mean). Averaging it in
+would have improved the headline figure by inventing accuracy. The run is
+excluded from the aggregate below.
+
+## Results: ORB-SLAM3 stereo-inertial on the D455-mirror rig
+
+`RIG=d455 ./docker/scripts/run_experiment.sh 5`, depth OFF, IR 848x480,
+IMU 200 Hz, scripted 3 m square at 2.0 m altitude.
+
+| run | ATE rmse | RPE rmse | RTF | IMU init | path | `Tracking LOST` |
+|---|---|---|---|---|---|---|
+| 1 | 1.774 m | 0.946 m | 0.279 | +2.440 s | 18.74 m | 0 |
+| 2 | 0.831 m | 0.342 m | 0.278 | +2.444 s | 18.86 m | 6 |
+| 3 | 0.503 m | 0.239 m | 0.282 | +2.440 s | 18.83 m | 2 |
+| 4 | 2.367 m | 1.406 m | 0.279 | +2.440 s | 18.95 m | 24 |
+| 5 | *excluded* | | *0.258* | +2.444 s | 18.87 m | 0 |
+
+Mean +/- sample stdev over the **four valid** runs:
+
+```
+ATE rmse (m)             1.369 +/- 0.856   [0.503..2.367]
+RPE rmse (m) @1m delta   0.733 +/- 0.546   [0.239..1.406]
+real-time factor         0.280 +/- 0.002   [0.278..0.282]
+IMU init delay (s)       2.441 +/- 0.002   [2.440..2.444]
+path length (m)         18.845 +/- 0.087   [18.740..18.950]
+```
+
+`SUMMARY.txt` in the experiment directory still prints `n=5`; the figures here
+are the ones to quote.
+
+### Interpretation
+
+- **The per-run RTF decay is gone.** sigma = 0.002 across runs, and no decay
+  *within* a run either (run 1: 0.246 -> 0.279 over 14 windows). Restarting
+  `gz sim` per run plus `init: true` reaping orphans fixed it.
+- **IMU initialisation is essentially deterministic** at +2.441 s (~frame 75,
+  ~500 IMU samples) and never failed. But the scripted path only *barely*
+  excites it: LocalMapping resets the active map **31-38 times** per run with
+  `Not enough motion for initializing` while the airframe is parked, because its
+  gate is `(mTinit < 10.f) && (dist < 0.02)`. Initialisation sticks only once
+  the climb starts. Sufficient, with no margin -- a longer settle or slower
+  climb would push it past the 10 s window.
+- **Full-flight and post-IMU-init ATE are bit-identical, legitimately.** The
+  published estimate starts at t ~= 16.4-16.7 s while IMU init happens at
+  t ~= 10.1-10.5 s, so `--t_start` excludes nothing: the wrapper publishes only
+  once `GetTrackingState()==2`, and the repeated resets mean the surviving map
+  begins ~6 s after init. `imu_init.txt` now records `est_first_stamp` and
+  `postinit_window_equals_full_flight` so this is visible rather than puzzling.
+- **1.369 m over 18.8 m (~7% of path) is poor**, and worse than phase 1's RGB-D
+  0.421 m. The estimator is nonetheless behaving: single map (id 0), VIBA 1 and
+  2 both completing, no merges, no relocalizations, RPE *median* 0.032 m against
+  an RPE max of 4.30 m -- accurate locally, with a few large excursions. The
+  spread tracks tracking stability only loosely: run 4 had 24 losses and the
+  worst ATE, but run 1 had **zero** losses and still scored 1.774 m, so drift
+  alone reaches metre level here.
+- **The 95 mm baseline is the likely physical cause.** With fx = 446.8,
+  `Z = fx*b/d = 42.5/d` metres, so a feature at 10 m gives ~4 px disparity and
+  anything past ~15 m is effectively monocular. In the forest world at 2 m
+  altitude much of the scene is beyond useful stereo range. That is a faithful
+  property of a real D455, not a simulation artefact -- but it makes this a hard
+  baseline, and OpenVINS will face the same geometry.
+- **Comparability constraint for phase 3**: see s32. ORB-SLAM3 consumed 7-8 of
+  the 30.3 published Hz. OpenVINS must be compared at the same effective input
+  rate or the comparison measures CPU budget, not estimator quality.

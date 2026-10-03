@@ -138,9 +138,36 @@ namespace ORB_SLAM3_Wrapper
         auto Tcw = interface()->slam()->TrackStereo(cvLeft->image, cvRight->image,
                                                     tFrame, vImuMeas);
 
-        // Report IMU initialisation exactly once. GetTimeFromIMUInit() returns
-        // > 0 only after Atlas::isImuInitialized(), so it is a reliable edge.
-        if (!imuInitialised_)
+        // Report IMU initialisation exactly once.
+        //
+        // The Atlas::isImuInitialized() guard is NOT redundant -- it is load
+        // bearing. ORB-SLAM3's System::GetTimeFromIMUInit() is
+        //
+        //     double aux = mpLocalMapper->GetCurrKFTime() - mpLocalMapper->mFirstTs;
+        //     if ((aux > 0.) && mpAtlas->isImuInitialized()) ...
+        //
+        // i.e. it dereferences the local mapper's current keyframe BEFORE
+        // testing whether the IMU is initialised, and LocalMapping's
+        // `KeyFrame* mpCurrentKeyFrame` appears in neither the constructor's
+        // initialiser list nor its body (LocalMapping.h:185,
+        // LocalMapping.cc:33-47) -- it is first assigned in
+        // ProcessNewKeyFrame(). So before the first keyframe reaches the local
+        // mapper the pointer holds indeterminate garbage, GetCurrKFTime()'s
+        // `if (mpCurrentKeyFrame)` test passes on it, and `->mTimeStamp`
+        // segfaults:
+        //
+        //     #0  ORB_SLAM3::LocalMapping::GetCurrKFTime()
+        //     #1  ORB_SLAM3::System::GetTimeFromIMUInit()
+        //     #2  StereoInertialSlamNode::StereoCallback()
+        //
+        // Reproduced on every stereo-inertial run, always on the frames before
+        // stereo initialisation succeeds (the ones that print "not IMU meas").
+        // Testing isImuInitialized() first is sufficient: it can only become
+        // true from LocalMapping::InitializeIMU(), which runs after
+        // ProcessNewKeyFrame() has assigned mpCurrentKeyFrame. This is an
+        // upstream bug (see docker/PATCHES.md s31); the workaround is here, in
+        // our own node, so no vendored algorithm code is touched.
+        if (!imuInitialised_ && interface()->slam()->GetAtlas()->isImuInitialized())
         {
             const double tFromInit = interface()->slam()->GetTimeFromIMUInit();
             if (tFromInit > 0.0)

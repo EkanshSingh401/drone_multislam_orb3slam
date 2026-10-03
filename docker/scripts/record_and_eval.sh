@@ -94,8 +94,32 @@ else
         kill -TERM "${BAG_PID}" 2>/dev/null || true
     fi
     for _ in $(seq 1 30); do kill -0 "${BAG_PID}" 2>/dev/null || break; sleep 1; done
-    kill -0 "${BAG_PID}" 2>/dev/null && echo "    WARNING recorder still alive"
-    wait "${BAG_PID}" 2>/dev/null || true
+    # SIGKILL is the last resort and it must exist. Without it this escalation
+    # ended at a warning and then blocked on `wait` for a process that was never
+    # going to exit -- `wait` on a live child has no timeout. That wedged run 5
+    # of the first stereo-inertial experiment for 36 minutes: the recorder kept
+    # writing (the flight ended 18:50, the mcap was still growing at 19:26) and
+    # the run's trajectory ended up ~10x longer than the flight, almost all of
+    # it a parked vehicle, which makes its ATE meaningless. rosbag2 IGNORES
+    # SIGINT here (/proc/<pid>/SigIgn has bit 2 set) and CATCHES SIGTERM
+    # (SigCgt bit 15) -- so the handler exists and simply did not stop the
+    # recording. SIGKILL costs only metadata.yaml, which the reindex below
+    # regenerates.
+    if kill -0 "${BAG_PID}" 2>/dev/null; then
+        echo "    SIGTERM ignored too, sending SIGKILL"
+        pkill -KILL -f "ros2 bag record" 2>/dev/null || true
+        kill -KILL "${BAG_PID}" 2>/dev/null || true
+        for _ in $(seq 1 15); do kill -0 "${BAG_PID}" 2>/dev/null || break; sleep 1; done
+    fi
+    if kill -0 "${BAG_PID}" 2>/dev/null; then
+        # Never `wait` on a process that survived SIGKILL: that blocks forever.
+        echo "    ERROR recorder survived SIGKILL; NOT waiting on it." >&2
+        echo "    This run's bag covers more than the flight -- treat its ATE" >&2
+        echo "    as invalid rather than comparable." >&2
+        touch "${RUNDIR}/INVALID_RECORDER_OVERRUN"
+    else
+        wait "${BAG_PID}" 2>/dev/null || true
+    fi
 
     # SIGINT, not SIGKILL: the monitor traps it and prints the RUN SUMMARY that
     # carries this run's real-time factor. Killing it hard loses that.
@@ -156,9 +180,18 @@ fi
 # orientations, so an unaligned ATE would just measure that offset. Scale is NOT
 # estimated (-s omitted) because RGB-D SLAM is metric -- letting evo fit scale
 # would hide real scale error.
+# evo's --save_results refuses to clobber an existing archive: it PROMPTS, and
+# on a non-tty the prompt hits EOF and evo exits non-zero with a traceback --
+# AFTER it has already printed the statistics. run_experiment.sh calls this
+# script twice per run (the flight, then --eval-only), so the second pass always
+# tripped it. The numbers survived (they are parsed from the .txt), but the
+# non-zero exit was reported as a failure. Clear the archive first.
+rm_stale() { rm -f "$@"; }
+
 run_evo() {  # run_evo <label> <est.tum>
     local label="$1" est="$2"
     [[ -s "${est}" ]] || { echo "  (no ${label} trajectory, skipping)"; return; }
+    rm_stale "${RUNDIR}/ape_${label}.zip" "${RUNDIR}/rpe_${label}.zip"
 
     hr; echo "ATE (evo_ape) -- ${label} vs ground truth"; hr
     evo_ape tum "${RUNDIR}/gt.tum" "${est}" \
@@ -190,16 +223,33 @@ if [[ -f "${SLAM_LOG}" ]]; then
     FIRST_T=$(sed 's/\x1b\[[0-9;]*m//g' "${SLAM_LOG}" \
         | grep -oE 'first stereo pair at t=[0-9.]+' | head -1 \
         | grep -oE '[0-9.]+$' || true)
+    # Also record where the PUBLISHED estimate starts. On this rig it turns out
+    # to begin several seconds AFTER IMU initialisation, because LocalMapping
+    # keeps resetting the active map ("Not enough motion for initializing")
+    # while the airframe is still parked, and the wrapper only publishes once
+    # GetTrackingState()==2. The --t_start window then excludes nothing and the
+    # full-flight and post-init metrics come out bit-identical. That is correct
+    # but looks like a broken filter, so make it visible instead of puzzling.
+    EST_FIRST_T=$(head -1 "${RUNDIR}/est_orbslam3.tum" 2>/dev/null | cut -d' ' -f1 || true)
     {
       echo "imu_init_stamp=${IMU_INIT_T:-none}"
       echo "first_frame_stamp=${FIRST_T:-none}"
+      echo "est_first_stamp=${EST_FIRST_T:-none}"
       if [[ -n "${IMU_INIT_T}" && -n "${FIRST_T}" ]]; then
           echo "imu_init_delay_s=$(python3 -c "print(f'{${IMU_INIT_T}-${FIRST_T}:.3f}')")"
+      fi
+      if [[ -n "${IMU_INIT_T}" && -n "${EST_FIRST_T}" ]]; then
+          python3 -c "
+imu, est = ${IMU_INIT_T}, ${EST_FIRST_T}
+print(f'est_starts_after_imu_init_s={est-imu:.3f}')
+print('postinit_window_equals_full_flight=' + ('yes' if est >= imu else 'no'))"
       fi
     } > "${RUNDIR}/imu_init.txt"
     hr; echo "IMU INITIALISATION"; hr
     cat "${RUNDIR}/imu_init.txt" | sed 's/^/  /'
     if [[ -n "${IMU_INIT_T}" ]]; then
+        rm_stale "${RUNDIR}/ape_orbslam3_postinit.zip" \
+                 "${RUNDIR}/rpe_orbslam3_postinit.zip"
         hr; echo "ATE (evo_ape) -- orbslam3 AFTER IMU init (t >= ${IMU_INIT_T})"; hr
         evo_ape tum "${RUNDIR}/gt.tum" "${RUNDIR}/est_orbslam3.tum" \
             -a --t_max_diff 0.05 --t_start "${IMU_INIT_T}" \
