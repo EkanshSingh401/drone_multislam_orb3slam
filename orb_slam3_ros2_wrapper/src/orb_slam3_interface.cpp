@@ -5,6 +5,8 @@
  */
 #include "orb_slam3_ros2_wrapper/orb_slam3_interface.hpp"
 
+#include <cstdlib>   // std::getenv, for the optional trajectory dump below
+
 namespace ORB_SLAM3_Wrapper
 {
     using namespace WrapperTypeConversions;
@@ -42,6 +44,34 @@ namespace ORB_SLAM3_Wrapper
     {
         std::cout << "Interface destructor" << endl;
         mSLAM_->Shutdown();
+
+        // Optionally dump the FINAL, globally-optimised trajectory.
+        //
+        // The pose stream this wrapper publishes online is the pre-optimisation
+        // estimate: ORB-SLAM3's visual-inertial BA rewrites the map
+        // retroactively (see docker/PATCHES.md s34), but each pose is published
+        // once, as its frame is tracked, and is never revised. So the online
+        // trajectory and the final map disagree, and reporting only one of them
+        // tells half the story -- the online one is what a planner actually
+        // consumes, the optimised one is what the algorithm ultimately believes.
+        //
+        // Deliberately AFTER Shutdown(), matching ORB-SLAM3's own examples:
+        // Shutdown() lets the pending bundle adjustment finish, so saving first
+        // would capture a half-optimised map. Env-driven so that ordinary runs
+        // are unaffected and nothing is written unless asked.
+        if (const char *traj = std::getenv("ORB_SLAM3_SAVE_TRAJECTORY"))
+        {
+            // Rejected only for MONOCULAR (System.cc:687), so every mode this
+            // wrapper runs -- RGB-D, stereo, stereo-inertial -- is supported.
+            std::cout << "saving optimised trajectory to " << traj << std::endl;
+            mSLAM_->SaveTrajectoryTUM(std::string(traj));
+        }
+        if (const char *kfs = std::getenv("ORB_SLAM3_SAVE_KF_TRAJECTORY"))
+        {
+            std::cout << "saving optimised keyframe trajectory to " << kfs << std::endl;
+            mSLAM_->SaveKeyFrameTrajectoryTUM(std::string(kfs));
+        }
+
         mSLAM_.reset();
         mapReferencePoses_.clear();
         allKFs_.clear();

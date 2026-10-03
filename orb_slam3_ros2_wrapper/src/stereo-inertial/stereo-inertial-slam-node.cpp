@@ -135,6 +135,27 @@ namespace ORB_SLAM3_Wrapper
         ++frameCount_;
         lastFrameStamp_ = tFrame;
 
+        // Low-rate wall<->sim clock beacon.
+        //
+        // ORB-SLAM3 prints its stage markers ("start VIBA 1", "end VIBA 2",
+        // "Not enough motion for initializing") as bare couts with NO
+        // timestamp, and rcl's own log prefixes are SYSTEM time, not the node
+        // clock -- so there is no direct way to place those markers on the
+        // simulation timeline. Previously they were located by scaling wall
+        // offsets by the measured real-time factor, which is only as good as
+        // the RTF being constant.
+        //
+        // Emitting both clocks together at 0.5 Hz lets any marker be bracketed
+        // between two beacons, which is what defines the "converged window"
+        // (from VIBA 2 completion onward) that the estimators are compared
+        // over. 0.5 Hz costs nothing and keeps the log readable.
+        if (tFrame - lastBeaconStamp_ >= 2.0)
+        {
+            lastBeaconStamp_ = tFrame;
+            RCLCPP_INFO(this->get_logger(), "clock beacon: sim_t=%.6f frame=%zu",
+                        tFrame, frameCount_);
+        }
+
         auto Tcw = interface()->slam()->TrackStereo(cvLeft->image, cvRight->image,
                                                     tFrame, vImuMeas);
 
