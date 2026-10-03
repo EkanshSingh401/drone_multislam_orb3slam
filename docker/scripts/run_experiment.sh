@@ -13,36 +13,6 @@
 # the exported trajectory mixes runs.
 set -eo pipefail
 
-# ---------------------------------------------------------------------------
-# Re-exec from an immutable copy of this script.
-# ---------------------------------------------------------------------------
-# Bash reads a script INCREMENTALLY, not all at once. Editing this file while an
-# experiment is running therefore changes the byte offsets under the live
-# interpreter, and it resumes reading at the old offset inside the new text.
-# That happened: a mid-run edit killed an otherwise-complete five-run experiment
-# with
-#     run_experiment.sh: line 193: syntax error near unexpected token `done'
-# right at the end of the loop. The run data survived (it is written per run) but
-# the aggregation step was lost and had to be redone by hand.
-#
-# These experiments run for an hour or more, and editing the harness while one
-# is in flight is a normal thing to want to do. So copy and re-exec: after this
-# point the running experiment is immune to edits of the original file.
-if [[ -z "${_RUN_EXPERIMENT_REEXEC:-}" ]]; then
-    _self_copy="$(mktemp -t run_experiment.XXXXXX)"
-    cat "$0" > "${_self_copy}"
-    chmod +x "${_self_copy}"
-    export _RUN_EXPERIMENT_REEXEC=1
-    # The copy cleans ITSELF up, below. Trapping EXIT here would not work:
-    # exec replaces the process image, so this shell never exits and its traps
-    # are discarded -- the temp file would simply leak.
-    export _RUN_EXPERIMENT_SELF="${_self_copy}"
-    exec "${_self_copy}" "$@"
-fi
-# Running from the copy: remove it when the experiment ends, however it ends.
-if [[ -n "${_RUN_EXPERIMENT_SELF:-}" ]]; then
-    trap 'rm -f "${_RUN_EXPERIMENT_SELF}"' EXIT
-fi
 
 N="${1:-${N:-5}}"
 COMPOSE="docker compose -f docker/compose.yaml"
@@ -95,8 +65,52 @@ case "${RIG}" in
   *) echo "RIG must be 'depth', 'd455' or 'd455_stereo'" >&2; exit 2 ;;
 esac
 
-OUT="docker/out/experiment_${RIG}_path${PATH_VERSION}_$(date +%Y%m%d-%H%M%S)"
+# _RUN_EXPERIMENT_OUT is set by the snapshot step below, so the re-executed copy
+# reuses the same directory instead of minting a second timestamped one.
+OUT="${_RUN_EXPERIMENT_OUT:-docker/out/experiment_${RIG}_path${PATH_VERSION}_$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "${OUT}"
+
+# ---------------------------------------------------------------------------
+# Snapshot every script into the run directory, then run only from there.
+# ---------------------------------------------------------------------------
+# Two problems, one fix.
+#
+# First: bash reads a script INCREMENTALLY. Editing this file mid-run shifts byte
+# offsets under the live interpreter, which then resumes at its old offset inside
+# the new text. That killed an otherwise-complete five-run experiment with
+#     run_experiment.sh: line 193: syntax error near unexpected token `done'
+# at the end of the loop. Executing from a snapshot makes a running experiment
+# immune to edits of the originals.
+#
+# Second: provenance. MANIFEST.txt records the git commit, but a dirty tree makes
+# that insufficient -- and these scripts are edited constantly between runs. The
+# snapshot is the exact code that produced the results sitting beside them, with
+# MD5SUMS so it can be diffed against any later version.
+#
+# The snapshot is kept, not cleaned up: it IS the record. It is a few hundred KB.
+#
+# NOTE this covers the HOST side. The scripts that run inside the container come
+# from /opt/scripts, baked into the image, so they cannot change mid-run either;
+# the staleness guard below is what ties those to the host copies, and
+# MANIFEST.txt records the image id.
+if [[ -z "${_RUN_EXPERIMENT_REEXEC:-}" ]]; then
+    _src_dir="$(cd "$(dirname "$0")" && pwd)"
+    mkdir -p "${OUT}/scripts"
+    cp "$0" "${OUT}/scripts/run_experiment.sh"
+    for f in "${_src_dir}"/*.sh "${_src_dir}"/*.py; do
+        [[ -f "$f" ]] && cp "$f" "${OUT}/scripts/"
+    done
+    chmod +x "${OUT}/scripts"/*.sh "${OUT}/scripts"/*.py 2>/dev/null || true
+    ( cd "${OUT}/scripts" \
+      && { md5sum -- * 2>/dev/null || md5 -r -- *; } > MD5SUMS ) || true
+    echo "--- snapshotted $(ls -1 "${OUT}/scripts" | wc -l | tr -d ' ') scripts to ${OUT}/scripts ---"
+    export _RUN_EXPERIMENT_REEXEC=1
+    export _RUN_EXPERIMENT_OUT="${OUT}"
+    # Relative paths (docker/compose.yaml, docker/scripts/...) are resolved
+    # against the CWD, which exec preserves, so running the copy from the run
+    # directory changes nothing about how it finds things.
+    exec "${OUT}/scripts/run_experiment.sh" "$@"
+fi
 
 # --- guard: the container must be running the CURRENT scripts ----------------
 # Rebuilding the image is not enough; the container keeps the old image until it

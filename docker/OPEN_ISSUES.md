@@ -61,7 +61,52 @@ loudly labelled.
 
 ---
 
-## 2. The scripted flight paths are versioned; results are path-specific
+## 2. Gravity: the sim uses 9.81, Atlanta is ~9.795, the Jetson config says 9.81
+
+**Status:** open for HARDWARE. Fix before the next hardware run. The simulation
+side is settled and should be left alone.
+
+Three different numbers are in play and only two of them agree for a good
+reason:
+
+| where | value | why |
+|---|---|---|
+| ORB-SLAM3 | 9.81 | hardcoded, `ImuTypes.h:46 GRAVITY_VALUE`, not configurable |
+| this simulation | 9.81 | patched to MATCH ORB-SLAM3 (PATCHES.md s36) |
+| Georgia Tech, actual | **~9.795** | local gravity at that latitude/elevation |
+| Jetson OpenVINS config | 9.81 | **wrong on hardware -- off by ~0.015 m/s^2** |
+
+**Why this is not a rounding detail.** In simulation, a **0.01 m/s^2** mismatch
+between the world and ORB-SLAM3's constant was worth **68% of the ATE and 85% of
+the run-to-run variance** (1.369 +/- 0.856 m -> 0.437 +/- 0.129 m, PATCHES.md
+s36). The hardware error is **0.015 m/s^2**, i.e. half again larger, and in the
+same direction of harm: it feeds the gravity-direction and accelerometer-bias
+states the filter solves for, so it does not show up as a constant offset that
+alignment removes. It shows up as inconsistent, run-dependent drift -- and it
+will also bias NEES, because the covariance will not know about it.
+
+**What to fix.** On the Jetson, set OpenVINS `gravity_mag: 9.795` (or the
+properly computed local value -- see below). Nothing in this repo's simulation
+configs should change: there, 9.81 is correct *by construction* because the
+world is generated to match it, and `gen_d455_sim.py --verify` enforces that
+agreement.
+
+**ORB-SLAM3 on hardware cannot be fixed this way**, because 9.81 is a compiled
+constant. Options, in order of preference: accept the ~0.015 m/s^2 error and say
+so when reporting; or patch `GRAVITY_VALUE` and record it as a deviation. Do not
+quietly do the latter -- it changes results and would otherwise be invisible.
+
+**Getting the local value properly** rather than from memory: the WGS-84
+Somigliana formula with a free-air correction,
+
+    g(phi, h) = 9.7803267715 * (1 + 0.0052790414 sin^2(phi)
+                                  + 0.0000232718 sin^4(phi)) - 3.086e-6 * h
+
+with phi = latitude in radians and h = elevation in metres. For Atlanta
+(phi ~= 33.78 deg, h ~= 320 m) that gives ~9.7953 m/s^2. Worth computing for the
+actual test site rather than reusing this number.
+
+## 3. The scripted flight paths are versioned; results are path-specific
 
 **Status:** managed, not closed.
 
@@ -76,7 +121,7 @@ versions are not comparable** and must not be pooled into one mean.
 
 ---
 
-## 3. `ros1_bridge` is not built
+## 4. `ros1_bridge` is not built
 
 **Status:** open, out of scope. See PATCHES.md s30. Requires amd64 emulation;
 the reproduction does not depend on it. Only needed to bring COVINS poses back
@@ -84,7 +129,7 @@ into ROS 2.
 
 ---
 
-## 4. COVINS runs without an IMU
+## 5. COVINS runs without an IMU
 
 **Status:** open, inherent to the phase-1 configuration. COVINS is a
 visual-*inertial* backend being fed RGB-D keyframes with no inertial data, so
@@ -93,7 +138,7 @@ its inertial machinery is unexercised. Use GBA `action: 4`/`5` (visual), never
 
 ---
 
-## 5. Single-agent COVINS does no place recognition
+## 6. Single-agent COVINS does no place recognition
 
 **Status:** open, configuration not fault. `placerec.inter_map_matches_only: 1`
 in this repo's `config_backend.yaml` means a single agent has no second map to
