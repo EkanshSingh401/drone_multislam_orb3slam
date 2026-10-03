@@ -91,6 +91,10 @@ else
     kill -0 "${BAG_PID}" 2>/dev/null && echo "    WARNING recorder still alive"
     wait "${BAG_PID}" 2>/dev/null || true
 
+    # SIGINT, not SIGKILL: the monitor traps it and prints the RUN SUMMARY that
+    # carries this run's real-time factor. Killing it hard loses that.
+    kill -INT "${MON_PID}" 2>/dev/null || true
+    for _ in $(seq 1 20); do kill -0 "${MON_PID}" 2>/dev/null || break; sleep 1; done
     kill -TERM "${MON_PID}" 2>/dev/null || true
     wait "${MON_PID}" 2>/dev/null || true
     sleep 2

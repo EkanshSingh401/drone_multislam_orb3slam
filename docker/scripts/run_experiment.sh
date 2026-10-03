@@ -70,7 +70,10 @@ for i in $(seq 1 "${N}"); do
         continue
     fi
     echo "run ${i}: stack up"
-    sleep 20   # let ORB-SLAM3 settle before arming
+    # Let ORB-SLAM3 settle AND let ROS 2 discovery converge before flying.
+    # fly_path.py now retries its namespace autodetect, but giving discovery a
+    # head start avoids burning that budget on every run.
+    sleep 30
 
     # --- flight + record ---
     ${COMPOSE} exec -T sim env SIDE="${SIDE}" ALT="${ALT}" LEG_TIME="${LEG_TIME}" \

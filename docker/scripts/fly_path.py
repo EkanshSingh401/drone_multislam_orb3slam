@@ -255,14 +255,41 @@ class ScriptedFlight(Node):
                 self.done = True
 
 
-def autodetect_namespace() -> tuple[str, int]:
-    """Find the PX4 topic namespace. SITL with -i N uses 'px4_N'."""
+def autodetect_namespace(timeout: float = 150.0) -> tuple[str, int]:
+    """Find the PX4 topic namespace. SITL with -i N uses 'px4_N'.
+
+    Retries, because this RACES ROS 2 discovery. A single `ros2 topic list`
+    issued shortly after bringup can return an incomplete graph; the old
+    single-shot version then fell back to the root namespace and the flight
+    failed 60 s later with "no VehicleStatus/VehicleLocalPosition", having never
+    talked to the FMU at all. Three of five runs died that way.
+
+    Returns ("", 0) if nothing is found, which the caller treats as fatal rather
+    than guessing -- flying against the wrong namespace is worse than not flying.
+    """
     import subprocess
-    try:
-        out = subprocess.run(["ros2", "topic", "list"], capture_output=True,
-                             text=True, timeout=30).stdout
-    except Exception:
-        return "", 1
+    import time as _t
+    deadline = _t.time() + timeout
+    attempt = 0
+    while _t.time() < deadline:
+        attempt += 1
+        try:
+            out = subprocess.run(["ros2", "topic", "list"], capture_output=True,
+                                 text=True, timeout=30).stdout
+        except Exception:
+            out = ""
+        ns = _scan_for_fmu(out)
+        if ns is not None:
+            if attempt > 1:
+                print(f"fly_path: namespace found on attempt {attempt}")
+            return ns
+        _t.sleep(3.0)
+    print("fly_path: no */fmu/in/trajectory_setpoint topic found after "
+          f"{timeout:.0f}s -- is MicroXRCEAgent running?", file=sys.stderr)
+    return "", 0
+
+
+def _scan_for_fmu(out: str):
     for line in out.splitlines():
         line = line.strip()
         if line.endswith("/fmu/in/trajectory_setpoint"):
@@ -277,7 +304,7 @@ def autodetect_namespace() -> tuple[str, int]:
                 except ValueError:
                     pass
             return ns, 1
-    return "", 1
+    return None
 
 
 def main() -> int:
@@ -293,7 +320,14 @@ def main() -> int:
                     help="seconds to hold after the climb")
     args = ap.parse_args()
 
-    ns, derived_sys = (args.namespace, 1) if args.namespace else autodetect_namespace()
+    if args.namespace:
+        ns, derived_sys = args.namespace, 1
+    else:
+        ns, derived_sys = autodetect_namespace()
+        if derived_sys == 0:
+            print("fly_path: refusing to fly without a confirmed PX4 namespace",
+                  file=sys.stderr)
+            return 3
     if args.namespace and args.target_system is None:
         if ns.startswith("px4_"):
             try:

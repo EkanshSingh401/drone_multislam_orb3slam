@@ -7,13 +7,27 @@ sampling it 12 times gave 0.032 in one run and 0.538 in another, while the true
 average over the same flight was 0.289. The only honest RTF is simulated time
 divided by wall time over the window of interest, which is what this measures.
 
-Writes a CSV of per-window samples plus a final summary block.
+OBSERVER EFFECT -- read before enabling --images. Subscribing to the full Image
+topics from Python costs real CPU (640x480x3 is ~0.9 MB per frame, 848x480 mono
+is ~0.4 MB) and it PERTURBS the simulator it is measuring. Measured on this host:
+with image subscriptions active the real-time factor collapsed from 0.289 to
+~0.026 and the RGB stream reported 17.6 Hz in sim time against a 30 Hz nominal,
+while camera_info -- which is tiny -- still showed 30.3 Hz. The images were not
+genuinely dropping; the monitor was starving the renderer.
 
-    ./rate_monitor.py --duration 300 --out /out/logs/rates.csv
+So by default this subscribes ONLY to /clock, which is cheap, and reports the
+real-time factor. That is safe to run during a flight. Pass --images for a
+DEDICATED measurement pass (no flight, no SLAM) when you actually want stream
+rates, and treat the RTF reported in that mode as a lower bound.
+
+    ./rate_monitor.py --duration 300                  # RTF only, flight-safe
+    ./rate_monitor.py --images --duration 120         # dedicated rate pass
+    ./rate_monitor.py --images --stereo --duration 120
 """
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 import time
 
@@ -93,10 +107,18 @@ def main() -> int:
     ap.add_argument("--out", default=None)
     ap.add_argument("--stereo", action="store_true",
                     help="monitor the D455-mirror stereo/IMU topic set instead")
+    ap.add_argument("--images", action="store_true",
+                    help="also subscribe to the image/IMU streams. PERTURBS the "
+                         "simulator -- use only for a dedicated measurement pass, "
+                         "never during a flight being evaluated.")
     args = ap.parse_args()
 
     ns = args.namespace
-    if args.stereo:
+    if not args.images:
+        # Clock-only: measures the real-time factor without touching the heavy
+        # topics, so it can run alongside a flight without distorting it.
+        topics = {}
+    elif args.stereo:
         topics = {
             "/camera/infra1/image_rect_raw": Image,
             "/camera/infra2/image_rect_raw": Image,
@@ -111,12 +133,27 @@ def main() -> int:
             f"/{ns}/robot_pose_slam": PoseStamped,
         }
 
+    # Print the summary even when killed. record_and_eval stops this process
+    # when the flight ends; without a handler the summary never appears and the
+    # run's real-time factor is lost (it showed up as "nan" in the aggregate).
+    stop = {"now": False}
+
+    def _stop(signum, _frame):
+        stop["now"] = True
+
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
     rclpy.init()
     n = RateMonitor(topics, args.window)
-    print("rate_monitor: " + ", ".join(topics), flush=True)
+    if topics:
+        print("rate_monitor: MEASUREMENT PASS (perturbs the sim) -- "
+              + ", ".join(topics), flush=True)
+    else:
+        print("rate_monitor: clock-only (flight-safe); RTF = sim/wall", flush=True)
     end = time.time() + args.duration
     try:
-        while rclpy.ok() and time.time() < end:
+        while rclpy.ok() and time.time() < end and not stop["now"]:
             rclpy.spin_once(n, timeout_sec=0.05)
             n.tick()
     except KeyboardInterrupt:
