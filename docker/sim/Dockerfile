@@ -320,7 +320,11 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # Pinned by COMMIT, not by branch. "openvins-integration" is a moving target and
 # a rebuild months from now must produce the same estimator, otherwise the ATE
 # and NEES numbers in PATCHES.md stop meaning anything.
-ARG OPEN_VINS_COMMIT=d9ba8033c31fb6efc9b50d70fc46e053806ceb5a
+# 06242b2 adds __has_include shims for four ROS 2 headers whose .h spellings
+# Jazzy removed, so one source tree builds on both Jazzy and Humble. The fix
+# lives in the fork, NOT as a sed here, so the repo stays the single source of
+# truth for what actually runs.
+ARG OPEN_VINS_COMMIT=06242b2acaf027fac65d0b3d530fab50bbc6fa2c
 ARG ACTIVE_SLAM_MSGS_COMMIT=a0790aafdb8dffa0eb33a0e7f471071d1edb9426
 ARG ACTIVE_SLAM_PLANNER_COMMIT=f56e1146256f009bc71a3b4c644afc8c7f2dcd14
 ARG ACTIVE_SLAM_INFORMATION_COMMIT=e2250686130f0d92adfb2bd126735638dddaf424
@@ -373,6 +377,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
                           active_slam_information active_slam_planner \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
         --executor sequential --parallel-workers 1 \
+        --event-handlers console_direct+ \
         > /tmp/ov_build.log 2>&1; \
     rc=$?; tail -40 /tmp/ov_build.log; \
     test $rc -eq 0 || { echo "FATAL: colcon build exited ${rc}"; exit $rc; }; \
@@ -381,17 +386,34 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     test -x ${WS}/install/ov_eval/lib/ov_eval/error_singlerun \
         || { echo "FATAL: ov_eval error_singlerun not built (needed for NEES)"; exit 1; }
 
-# Assert the joint-covariance publisher was actually COMPILED IN. Checking the
-# build log alone would be weak (the message could change), so this also
-# confirms the binary really links the message library.
+# Assert the joint-covariance publisher was actually COMPILED IN.
+#
+# `ldd` is the AUTHORITATIVE check and is therefore the one that fails the build:
+# the binary either links the message library or it does not, regardless of what
+# any log says.
+#
+# The configure-log check is secondary and deliberately non-fatal. It first cost
+# a build: colcon does NOT put per-package CMake output on its console by
+# default -- it captures it into log/latest_build/<pkg>/ and prints only a
+# summary -- so grepping the console log for ov_msckf's
+# `message(STATUS "... active_slam_msgs FOUND ...")` found nothing and failed a
+# build whose ov_msckf had linked the library perfectly well.
+# --event-handlers console_direct+ now routes that output into the log, and both
+# that log and colcon's own per-package log are searched, but a miss only warns.
 RUN set -eux; \
-    grep -q "active_slam_msgs FOUND" /tmp/ov_build.log \
-        || { echo "FATAL: ov_msckf did not find active_slam_msgs at configure time."; \
-             grep -n "active_slam_msgs" /tmp/ov_build.log || true; exit 1; }; \
     ldd ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
         | grep -q active_slam_msgs \
-        || { echo "FATAL: run_subscribe_msckf does not link active_slam_msgs"; exit 1; }; \
-    echo "joint covariance publisher IS compiled in (configure log + ldd agree)"
+        || { echo "FATAL: run_subscribe_msckf does not link active_slam_msgs."; \
+             echo "  The joint-covariance publisher was compiled out; /openvins/joint_covariance"; \
+             echo "  would never appear. Build active_slam_msgs BEFORE ov_msckf."; \
+             ldd ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf | head -30; \
+             exit 1; }; \
+    if grep -qr "active_slam_msgs FOUND" /tmp/ov_build.log \
+         ${WS}/log/latest_build/ov_msckf/ 2>/dev/null; then \
+        echo "joint covariance publisher IS compiled in (ldd + configure log agree)"; \
+    else \
+        echo "joint covariance publisher IS compiled in (ldd); configure-log line not captured"; \
+    fi
 
 # -----------------------------------------------------------------------------
 # 10. Runtime environment

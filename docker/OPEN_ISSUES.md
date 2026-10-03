@@ -106,7 +106,40 @@ with phi = latitude in radians and h = elevation in metres. For Atlanta
 (phi ~= 33.78 deg, h ~= 320 m) that gives ~9.7953 m/s^2. Worth computing for the
 actual test site rather than reusing this number.
 
-## 3. The scripted flight paths are versioned; results are path-specific
+## 3. Confirm the OpenVINS build on the Jetson's Humble container
+
+**Status:** open, blocking the next hardware run.
+
+`EkanshSingh401/open_vins` commit `06242b2` changes four includes in the
+ROS-2-compiled sources to `__has_include` shims, because Jazzy removed the `.h`
+spellings:
+
+```cpp
+#if __has_include(<image_transport/image_transport.hpp>)
+#include <image_transport/image_transport.hpp>
+#else
+#include <image_transport/image_transport.h>
+#endif
+```
+
+The four are `image_transport/image_transport`,
+`tf2_geometry_msgs/tf2_geometry_msgs` and `cv_bridge/cv_bridge` in
+`ROS2Visualizer.h`, plus `tf2_geometry_msgs/tf2_geometry_msgs` in
+`ROSVisualizerHelper.h`'s `ROS_AVAILABLE == 2` branch.
+
+The shim is designed to be distro-agnostic and the expectation is that Humble
+takes the `.hpp` branch too -- Jazzy removed the old spelling rather than adding
+the new one. **But that has only been verified on Jazzy.** Build `ov_msckf` in
+the Jetson's Humble container and confirm it still compiles before the next
+hardware run. If Humble lacks a `.hpp` for any of the four, the `#else` branch
+covers it; the risk is not a missing header but an unnoticed behavioural
+difference between two headers of the same name.
+
+ROS 1 paths were deliberately left alone (`ROS1Visualizer.h`, the
+`ROS_AVAILABLE == 1` branches, and the ROS-1-only test executables), so a ROS 1
+build is unaffected.
+
+## 4. The scripted flight paths are versioned; results are path-specific
 
 **Status:** managed, not closed.
 
@@ -121,7 +154,7 @@ versions are not comparable** and must not be pooled into one mean.
 
 ---
 
-## 4. `ros1_bridge` is not built
+## 5. `ros1_bridge` is not built
 
 **Status:** open, out of scope. See PATCHES.md s30. Requires amd64 emulation;
 the reproduction does not depend on it. Only needed to bring COVINS poses back
@@ -129,7 +162,7 @@ into ROS 2.
 
 ---
 
-## 5. COVINS runs without an IMU
+## 6. COVINS runs without an IMU
 
 **Status:** open, inherent to the phase-1 configuration. COVINS is a
 visual-*inertial* backend being fed RGB-D keyframes with no inertial data, so
@@ -138,7 +171,7 @@ its inertial machinery is unexercised. Use GBA `action: 4`/`5` (visual), never
 
 ---
 
-## 6. Single-agent COVINS does no place recognition
+## 7. Single-agent COVINS does no place recognition
 
 **Status:** open, configuration not fault. `placerec.inter_map_matches_only: 1`
 in this repo's `config_backend.yaml` means a single agent has no second map to
