@@ -144,3 +144,95 @@ Everything lands in `docker/out/` on the host.
 - **ORB-SLAM3 is linked against `libcovins_comm.so`**; the image build asserts
   this with `ldd`, because a silently-unlinked build would look fine and simply
   never contact the backend.
+
+---
+
+# Phase 2: the D455-mirror rig (`x500_d455`)
+
+A second drone variant carrying a simulated **D455-mirror** sensor head, so a
+VIO estimator developed against a real D455 on a Jetson can be run unchanged in
+simulation.
+
+| | |
+|---|---|
+| stereo IR pair | 848x480 @ 30 Hz, monochrome, **95 mm** baseline |
+| depth | 848x480 @ 30 Hz, 32FC1 metres, aligned to the left imager |
+| IMU | 200 Hz, explicit noise model |
+| intrinsics | fx = fy = 446.802773, cx = 424, cy = 240, zero distortion |
+
+**Topic names match the Jetson stack exactly**, so OpenVINS configs and launch
+files transfer unchanged:
+
+```
+/camera/infra1/image_rect_raw      /camera/infra1/camera_info
+/camera/infra2/image_rect_raw      /camera/infra2/camera_info
+/camera/depth/image_rect_raw       /camera/depth/camera_info
+/camera/imu
+```
+
+## Everything is generated from one spec
+
+`docker/sim/tools/gen_d455_sim.py` is the single source of truth. It emits the
+Gazebo SDF **and** the estimator configs together:
+
+```bash
+python3 docker/sim/tools/gen_d455_sim.py            # print the derivation
+python3 docker/sim/tools/gen_d455_sim.py --write    # regenerate
+python3 docker/sim/tools/gen_d455_sim.py --check    # fail if anything is stale
+```
+
+Generated:
+
+| file | purpose |
+|---|---|
+| `docker/sim/models/d455/model.sdf` | sensor module |
+| `docker/sim/models/x500_d455/model.sdf` | x500 carrying it |
+| `config_sim_only/kalibr_imu_chain.yaml` | OpenVINS IMU noise (continuous densities) |
+| `config_sim_only/kalibr_imucam_chain.yaml` | OpenVINS intrinsics + `T_cam_imu` |
+| `config_sim_only/orbslam3_d455_stereo_inertial.yaml` | ORB-SLAM3 stereo-inertial |
+| `config_sim_only/gz_bridge_d455.yaml` | Jetson-named bridge mapping |
+
+The SDF and the estimator configs must agree **exactly** — otherwise a VIO run
+silently measures calibration error instead of estimator error. One spec plus a
+`--check` mode is how that is enforced.
+
+## IMU noise units — read this before touching the numbers
+
+Gazebo's `<noise><stddev>` is a **per-sample (discrete)** sigma. OpenVINS,
+Kalibr and ORB-SLAM3 all want **continuous-time densities**:
+
+```
+sigma_discrete = sigma_density * sqrt(rate)      # sqrt(200) = 14.142
+```
+
+Mixing them up misstates the IMU noise by ~14x, and nothing errors — the filter
+just mis-weights the IMU. Bias is worse: Gazebo models it as a first-order
+Gauss-Markov (OU) process via `dynamic_bias_stddev` / `dynamic_bias_correlation_time`,
+not as a random walk, and `sigma_rw = sigma_b * sqrt(2/tau)`. The spec declares
+the densities and derives Gazebo's values, never the reverse.
+
+Full derivation, geometry table and exact camera-IMU extrinsics:
+[`config_sim_only/D455_SIM_CALIBRATION.md`](sim/config_sim_only/D455_SIM_CALIBRATION.md).
+
+**`config_sim_only/` is simulation-only by construction.** Nothing in it may be
+copied over a real sensor's Kalibr output.
+
+## Bringing it up
+
+`bringup_sim.sh` serves both rigs; the phase-1 defaults are unchanged.
+
+```bash
+# D455-mirror rig, no SLAM (there is no stereo-inertial node in the wrapper yet)
+docker compose -f docker/compose.yaml exec sim \
+  env MODEL=gz_x500_d455 START_SLAM=0 /opt/scripts/bringup_sim.sh
+
+# measure what the three image streams and the IMU actually deliver
+docker compose -f docker/compose.yaml exec sim \
+  python3 -u /opt/scripts/rate_monitor.py --stereo --duration 180
+```
+
+`rate_monitor.py` exists because Gazebo's own `real_time_factor` field is
+instantaneous and strongly bimodal — sampling it gave 0.032 on one run and 0.538
+on another, while the true average over the same flight was **0.289**. The only
+honest RTF is simulated time over wall time across the window, which is what it
+reports.
