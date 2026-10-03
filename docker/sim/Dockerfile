@@ -315,6 +315,85 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     echo "orb_slam3_ros2_wrapper rgbd node built"
 
 # -----------------------------------------------------------------------------
+# 9b. OpenVINS + the active-SLAM packages (phase 3)
+# -----------------------------------------------------------------------------
+# Pinned by COMMIT, not by branch. "openvins-integration" is a moving target and
+# a rebuild months from now must produce the same estimator, otherwise the ATE
+# and NEES numbers in PATCHES.md stop meaning anything.
+ARG OPEN_VINS_COMMIT=d9ba8033c31fb6efc9b50d70fc46e053806ceb5a
+ARG ACTIVE_SLAM_MSGS_COMMIT=a0790aafdb8dffa0eb33a0e7f471071d1edb9426
+ARG ACTIVE_SLAM_PLANNER_COMMIT=f56e1146256f009bc71a3b4c644afc8c7f2dcd14
+ARG ACTIVE_SLAM_INFORMATION_COMMIT=e2250686130f0d92adfb2bd126735638dddaf424
+
+# Cloned over https: these repos are publicly readable, so the image needs no
+# credentials and no SSH agent forwarding.
+RUN set -eux; \
+    cd ${WS}/src; \
+    for spec in \
+        "open_vins|${OPEN_VINS_COMMIT}" \
+        "active_slam_msgs|${ACTIVE_SLAM_MSGS_COMMIT}" \
+        "active_slam_planner|${ACTIVE_SLAM_PLANNER_COMMIT}" \
+        "active_slam_information|${ACTIVE_SLAM_INFORMATION_COMMIT}" ; do \
+        repo="${spec%%|*}"; sha="${spec##*|}"; \
+        git clone --filter=blob:none --no-checkout \
+            "https://github.com/EkanshSingh401/${repo}.git" "${repo}"; \
+        git -C "${repo}" fetch --depth 1 origin "${sha}"; \
+        git -C "${repo}" checkout --detach "${sha}"; \
+        test "$(git -C "${repo}" rev-parse HEAD)" = "${sha}"; \
+        echo "  ${repo} @ ${sha}"; \
+    done
+
+# active_slam_msgs MUST be built first and ON ITS OWN.
+#
+# ov_msckf/package.xml deliberately does NOT declare a dependency on it, so that
+# a broken active_slam_msgs cannot take down the VIO build
+# (ov_msckf/cmake/ROS2.cmake:19 uses find_package(active_slam_msgs QUIET)).
+# The cost of that choice is that colcon has no ordering constraint between
+# them: in a single build it may compile ov_msckf first, find nothing, and
+# silently compile the joint-covariance publisher OUT. The only symptom is a
+# runtime warning,
+#   "joint covariance publisher NOT compiled in (active_slam_msgs was absent at
+#    build time)"                        -- ov_msckf/src/ros/ROS2Visualizer.cpp:65
+# and /openvins/joint_covariance simply never appears. Two separate colcon
+# invocations make the ordering explicit rather than lucky.
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    cd ${WS} && \
+    colcon build \
+        --packages-select active_slam_msgs \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release \
+        --executor sequential --parallel-workers 1 && \
+    test -d ${WS}/install/active_slam_msgs/share/active_slam_msgs/cmake && \
+    echo "active_slam_msgs built FIRST (ordering is explicit, not lucky)"
+
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    source ${WS}/install/setup.bash && \
+    cd ${WS} && \
+    colcon build \
+        --packages-select ov_core ov_init ov_msckf ov_eval \
+                          active_slam_information active_slam_planner \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+        --executor sequential --parallel-workers 1 \
+        > /tmp/ov_build.log 2>&1; \
+    rc=$?; tail -40 /tmp/ov_build.log; \
+    test $rc -eq 0 || { echo "FATAL: colcon build exited ${rc}"; exit $rc; }; \
+    test -x ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
+        || { echo "FATAL: run_subscribe_msckf not built"; exit 1; }; \
+    test -x ${WS}/install/ov_eval/lib/ov_eval/error_singlerun \
+        || { echo "FATAL: ov_eval error_singlerun not built (needed for NEES)"; exit 1; }
+
+# Assert the joint-covariance publisher was actually COMPILED IN. Checking the
+# build log alone would be weak (the message could change), so this also
+# confirms the binary really links the message library.
+RUN set -eux; \
+    grep -q "active_slam_msgs FOUND" /tmp/ov_build.log \
+        || { echo "FATAL: ov_msckf did not find active_slam_msgs at configure time."; \
+             grep -n "active_slam_msgs" /tmp/ov_build.log || true; exit 1; }; \
+    ldd ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
+        | grep -q active_slam_msgs \
+        || { echo "FATAL: run_subscribe_msckf does not link active_slam_msgs"; exit 1; }; \
+    echo "joint covariance publisher IS compiled in (configure log + ldd agree)"
+
+# -----------------------------------------------------------------------------
 # 10. Runtime environment
 # -----------------------------------------------------------------------------
 # Gazebo must find the PX4 models (x500_depth) and worlds (forest).
