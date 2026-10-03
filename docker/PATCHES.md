@@ -1161,3 +1161,95 @@ The 95 mm-baseline hypothesis from the phase-2 write-up is **not** supported by
 this: if weak stereo depth were the cause the error would grow with distance
 flown, and instead it *shrinks* after VIBA 1 and stays low. Weak depth may still
 limit the converged accuracy, but it is not what produced 1.369 m.
+
+## 35. Stereo-only bisection: ORB-SLAM3 without the IMU is 100x more accurate on the same rig
+
+The bisection asked a narrow question -- does the mid-flight discontinuity of
+s34 disappear without VIBA? -- and returned a much larger answer.
+
+Same rig, same scripted flight, same intrinsics, same extractor settings. The
+only difference is `System::STEREO` instead of `System::IMU_STEREO` and an
+ORB-SLAM3 settings file with the IMU block removed; both are emitted by
+`gen_d455_sim.py` so they cannot drift apart (`diff` between them is the header
+comment and the IMU block, nothing else).
+
+| | stereo-inertial (4 runs) | **stereo-only (1 run)** |
+|---|---|---|
+| ATE rmse | 1.369 +/- 0.856 m | **0.0138 m** |
+| ATE max | 4.941 m | **0.0386 m** |
+| RPE rmse @1 m | 0.733 +/- 0.546 m | **0.0172 m** |
+| largest single-sample error step | +3.418 m | **+0.020 m** |
+| `Tracking LOST` | 0 - 24 | **0** |
+| RTF | 0.280 | 0.286 |
+| path | 18.845 m | 18.762 m |
+
+**The ~30 s discontinuity is absent, as predicted.** The stereo-only log contains
+zero occurrences of `VIBA`, `IMU INITIALISED`, `not IMU meas` and
+`Not enough motion` -- the inertial machinery is genuinely not running -- and the
+error is flat across the flight instead of front-loaded:
+
+```
+  52.14.. 58.45s  rmse 0.009
+  58.45.. 64.75s  rmse 0.011
+  64.75.. 71.05s  rmse 0.015
+  71.05.. 77.36s  rmse 0.015
+  77.36.. 83.66s  rmse 0.017
+  83.66.. 89.96s  rmse 0.018
+  89.96.. 96.26s  rmse 0.016
+  96.26..102.57s  rmse 0.011
+```
+
+Coverage is 99.8% of the ground-truth window with 100% of samples associated
+within 50 ms and a maximum gap of 36 ms, so this is not a short or sparse
+trajectory flattering itself.
+
+### This is bigger than the VIBA transient
+
+s34 attributed the error to a start-up transient, and that is right as far as it
+goes -- but stereo-inertial's *converged* deciles were 0.05-0.5 m, still 4-35x
+worse than stereo-only's 0.009-0.018 m across the whole flight. Adding the IMU
+to this configuration makes it worse everywhere, not just at the start.
+
+### What is NOT the cause
+
+- **Scene / baseline.** 1.4 cm over 18.8 m with the same 95 mm baseline in the
+  same forest world retires the hypothesis from the phase-2 write-up outright.
+  The scene has ample usable features and the baseline is sufficient.
+- **Dropped frames.** 1911 of 1911 samples associated; see s32.
+- **Camera-IMU extrinsics.** Checked numerically rather than assumed. ORB-SLAM3's
+  `IMU.T_b_c1` is camera -> body(IMU) (`Settings.cc:422`, `Tbc_`). The emitted
+  rotation maps camera optical (0,0,1) to body (1,0,0) -- 1 m in front of the
+  camera is 1 m forward in body -- and the translation (0.00552, 0.0424, 0.01174)
+  equals `P_CAM0 - P_IMU` exactly. Correct in both value and direction.
+
+### Two things that ARE wrong, one of them ours
+
+1. **Gravity magnitude mismatch.** The Gazebo worlds use `<gravity>0 0 -9.8`
+   while ORB-SLAM3 hardcodes `const float GRAVITY_VALUE = 9.81`
+   (`ImuTypes.h:46`) -- not configurable. The 0.01 m/s^2 difference is partly
+   absorbed by the estimated accelerometer bias, but it couples straight into
+   the gravity-direction estimate that VIBA solves for. OpenVINS takes
+   `gravity_mag` from its config, so it would not have this problem, and
+   comparing an estimator that is handed the right gravity against one that is
+   not would be unfair in OpenVINS's favour. **Fix: the new validation world
+   sets `-9.81` so the simulator matches ORB-SLAM3's constant, and the OpenVINS
+   sim config sets `gravity_mag: 9.81` to match the world.** No vendored
+   algorithm code is touched.
+
+2. **The scripted path is close to degenerate for visual-inertial estimation.**
+   Straight constant-velocity legs with little rotation leave accelerometer bias
+   and inertial scale weakly observable. Stereo-only gets metric scale directly
+   from a known baseline and never estimates it; stereo-inertial additionally
+   solves for a scale that the motion barely constrains, and a poorly
+   conditioned scale estimate corrupts a trajectory that was already metric.
+   This is consistent with every observation above, including the 31-38
+   `Not enough motion for initializing` resets of s33.
+
+### Consequence for phase 3
+
+Stereo-only ORB-SLAM3 at 0.0138 m is the right yardstick for "is the rig and
+scene good enough", and it says yes emphatically. It is **not** the baseline
+OpenVINS is being compared against -- that remains stereo-inertial, like for
+like -- but it bounds what the sensor suite can deliver, and any VI result far
+from ~1 cm on this rig is an estimator or excitation problem, not a sensing
+limit.

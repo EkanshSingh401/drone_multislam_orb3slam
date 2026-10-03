@@ -33,6 +33,7 @@ START_SLAM="${START_SLAM:-1}"
 # feature counts and must match the hardware.
 D455_DEPTH="${D455_DEPTH:-1}"
 # SLAM_MODE: rgbd (phase-1 x500_depth) | stereo_inertial (phase-2 D455 rig)
+#            | stereo (phase-3 bisection: D455 rig, no IMU, no VIBA)
 SLAM_MODE="${SLAM_MODE:-rgbd}"
 MODEL_POSE="${MODEL_POSE:-0,0,0.25}"
 PX4_DIR="${PX4_DIR:-/opt/PX4-Autopilot}"
@@ -295,6 +296,14 @@ fi
 if [[ "${SLAM_MODE}" == "stereo_inertial" ]]; then
     log "starting ORB-SLAM3 STEREO-INERTIAL (loads the ORB vocabulary; ~30-60 s)"
     nohup ros2 launch orb_slam3_ros2_wrapper stereo_inertial.launch.py \
+        use_sim_time:=true \
+        > "${LOGDIR}/orb_slam3.log" 2>&1 &
+elif [[ "${SLAM_MODE}" == "stereo" ]]; then
+    # Stereo-only bisection: same rig and same intrinsics, System::STEREO, no
+    # IMU and hence no visual-inertial BA. Used to confirm that the mid-flight
+    # error discontinuity in the stereo-inertial runs is VIBA.
+    log "starting ORB-SLAM3 STEREO-ONLY (no IMU, no VIBA)"
+    nohup ros2 launch orb_slam3_ros2_wrapper stereo_d455.launch.py \
         use_sim_time:=true \
         > "${LOGDIR}/orb_slam3.log" 2>&1 &
 else
