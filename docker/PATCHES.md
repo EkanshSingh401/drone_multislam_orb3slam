@@ -937,15 +937,43 @@ messages are correct behaviour for that test: the drone was parked, so
 `LocalMapping`'s `(mTinit < 10.f) && (dist < 0.02)` check keeps resetting the
 active map. They disappear once the scripted flight actually moves the airframe.
 
-## 32. ORB-SLAM3 consumes ~8 of the 30 published stereo Hz
+## 32. RETRACTED: "ORB-SLAM3 consumes ~8 of the 30 published stereo Hz"
 
-The sensors deliver a nominal 30.3 Hz per IR imager in simulated time (§
-*Measured performance*), but the node's own tracking-frequency report settles at
-**7–8 frames/s**. The deficit is not dropped Gazebo frames: it is ORB-SLAM3's
-per-frame cost at 848×480 stereo on arm64 with no GPU. `message_filters` keeps
-the newest pairs and the rest are discarded at the synchroniser, which is the
-correct degradation — but it means the effective frame rate feeding the baseline
-is ~8 Hz, and OpenVINS must be compared at the same input rate, not at 30 Hz.
+**This section originally claimed ORB-SLAM3 was processing only 7-8 of the 30.3
+published Hz and that OpenVINS would have to be throttled to match. That claim
+was wrong and is retracted.** It is kept rather than deleted because it was
+acted on: it was reported as a phase-3 comparability constraint, and throttling
+OpenVINS to ~8 Hz on the strength of it would have crippled the comparison.
+
+The claim came from the node's own log line:
+
+```
+[INFO] ... Current ORB-SLAM3 tracking frequency: 8.00065 frames / sec
+```
+
+That figure is frames per **wall** second. At RTF 0.28 it corresponds to
+8.0 / 0.28 ~= 28.6 frames per **simulated** second -- which is the rate the
+cameras publish. The standalone 200 s test it was read from reported
+`frames=1555`, and 1555 frames over the ~56 s of simulated time in that window
+is 27.8 Hz, not 8 Hz.
+
+The published trajectories settle it directly. Counting poses in
+`est_orbslam3.tum` against the 30.33 Hz camera rate over the same span:
+
+| run | est poses | span (s) | est Hz | expected | dropped |
+|---|---|---|---|---|---|
+| 1 | 1930 | 63.66 | 30.32 | 1931.7 | 0.09% |
+| 2 | 1917 | 63.43 | 30.22 | 1924.8 | 0.40% |
+| 3 | 1947 | 64.32 | 30.27 | 1951.7 | 0.24% |
+| 4 | 1898 | 63.39 | 29.94 | 1923.7 | 1.33% |
+
+One pose published per stereo pair, to within a frame or two. Run 4's 1.33% is
+not dropped input either -- it had 24 `Tracking LOST` events, and the wrapper
+publishes nothing while tracking is lost.
+
+**Frames were never being dropped**, so no rate matching is needed for phase 3,
+and replaying bags more slowly cannot improve the ATE by recovering frames that
+were never lost. The real explanation for the error is s34.
 
 ## 33. Two defects in `record_and_eval.sh` found by the first stereo-inertial experiment
 
@@ -1055,3 +1083,81 @@ are the ones to quote.
 - **Comparability constraint for phase 3**: see s32. ORB-SLAM3 consumed 7-8 of
   the 30.3 published Hz. OpenVINS must be compared at the same effective input
   rate or the comparison measures CPU budget, not estimator quality.
+
+## 34. The phase-2 ATE is dominated by ORB-SLAM3's own VIBA corrections, not by drift or dropped frames
+
+`docker/scripts/diagnose_run.py` was written to answer what an RMSE cannot: is
+the error spread (drift) or concentrated (jumps), and where in the flight does
+it live. Run over all four valid phase-2 runs it shows the same structure every
+time.
+
+**Coverage is complete.** The estimate spans 100.0-100.1% of the ground-truth
+window, starts 0.04-0.10 s *before* the first ground-truth sample, associates
+99.9-100% of its samples within 50 ms, and has no gap over 0.5 s. So nothing is
+missing and nothing is being evaluated over a partial trajectory.
+
+**The error is front-loaded and collapses mid-flight.** RMSE by decile, run 4
+(the worst run):
+
+```
+  16.50.. 22.84s  rmse 4.242
+  22.84.. 29.17s  rmse 4.713
+  29.17.. 35.50s  rmse 1.428   <-- collapses here
+  35.50.. 41.83s  rmse 1.115
+  41.83.. 48.17s  rmse 0.482
+  48.17.. 54.50s  rmse 1.197
+```
+
+Every run has its single largest error step at **t = 28.8-30.3 s**, and in every
+case the error drops sharply immediately after it:
+
+| run | largest step | at t | error after |
+|---|---|---|---|
+| 1 | +2.716 m | 29.80 s | 0.817 m |
+| 2 | +1.065 m | 29.14 s | 0.650 m |
+| 3 | +0.439 m | 30.30 s | 0.305 m |
+| 4 | +3.418 m | 29.04 s | 1.515 m |
+
+**That is VIBA 1.** Placing ORB-SLAM3's untimestamped `cout` markers on the
+flight timeline via the surrounding ROS log stamps:
+
+| run | IMU init | VIBA 1 | VIBA 2 |
+|---|---|---|---|
+| 1 | sim 10.13 s | sim ~30.43 s | sim ~58.7-60.4 s |
+| 2 | sim 10.30 s | sim ~29.90 s | sim ~59.3-61.0 s |
+| 3 | sim 10.26 s | sim ~31.03 s | sim ~59.3-61.3 s |
+| 4 | sim 10.53 s | sim ~29.7-30.0 s | sim ~52.4-56.3 s |
+
+VIBA 1 coincides with the large step in all four runs, and the *second* cluster
+of steps (t ~= 53.9-61.5 s) coincides with VIBA 2.
+
+### Why this makes the headline ATE misleading
+
+ORB-SLAM3's visual-inertial bundle adjustment refines scale, gravity and biases
+and rewrites the map **retroactively**. The wrapper, however, publishes each
+pose once, online, as the frame is tracked. So `/robot_pose_slam` carries the
+*pre-refinement* trajectory for the first ~13 s of a ~64 s window, and then a
+discontinuity where the refinement lands. The ATE is mostly measuring that
+transient: the converged segments run 0.05-0.5 m.
+
+Consequences worth being explicit about:
+
+- **"ATE after IMU init" does not isolate this.** IMU init completes at
+  t ~= 10.1-10.5 s, VIBA 1 lands ~20 s later, and the published estimate does
+  not even begin until t ~= 16.5 s. Cropping at IMU init removes none of it
+  (s33), so the full-flight and post-init numbers being identical is not the
+  whole story -- the interesting crop would be *post-VIBA-1*.
+- **Replaying bags more slowly will not improve it.** That would fix dropped
+  frames, and per s32 no frames were being dropped. The transient is inherent
+  to streaming an online estimate from a system that corrects retroactively.
+- **The honest comparison against a filter is a cropped window.** OpenVINS is a
+  sliding-window filter with no retroactive global correction, so comparing its
+  full-flight ATE against ORB-SLAM3's full-flight ATE compares a filter's
+  steady-state against a smoother's start-up transient. Either evaluate both
+  from after VIBA 1, or evaluate ORB-SLAM3's final optimised trajectory rather
+  than its online stream, and say which.
+
+The 95 mm-baseline hypothesis from the phase-2 write-up is **not** supported by
+this: if weak stereo depth were the cause the error would grow with distance
+flown, and instead it *shrinks* after VIBA 1 and stays low. Weak depth may still
+limit the converged accuracy, but it is not what produced 1.369 m.
