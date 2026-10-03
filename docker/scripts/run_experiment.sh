@@ -13,6 +13,37 @@
 # the exported trajectory mixes runs.
 set -eo pipefail
 
+# ---------------------------------------------------------------------------
+# Re-exec from an immutable copy of this script.
+# ---------------------------------------------------------------------------
+# Bash reads a script INCREMENTALLY, not all at once. Editing this file while an
+# experiment is running therefore changes the byte offsets under the live
+# interpreter, and it resumes reading at the old offset inside the new text.
+# That happened: a mid-run edit killed an otherwise-complete five-run experiment
+# with
+#     run_experiment.sh: line 193: syntax error near unexpected token `done'
+# right at the end of the loop. The run data survived (it is written per run) but
+# the aggregation step was lost and had to be redone by hand.
+#
+# These experiments run for an hour or more, and editing the harness while one
+# is in flight is a normal thing to want to do. So copy and re-exec: after this
+# point the running experiment is immune to edits of the original file.
+if [[ -z "${_RUN_EXPERIMENT_REEXEC:-}" ]]; then
+    _self_copy="$(mktemp -t run_experiment.XXXXXX)"
+    cat "$0" > "${_self_copy}"
+    chmod +x "${_self_copy}"
+    export _RUN_EXPERIMENT_REEXEC=1
+    # The copy cleans ITSELF up, below. Trapping EXIT here would not work:
+    # exec replaces the process image, so this shell never exits and its traps
+    # are discarded -- the temp file would simply leak.
+    export _RUN_EXPERIMENT_SELF="${_self_copy}"
+    exec "${_self_copy}" "$@"
+fi
+# Running from the copy: remove it when the experiment ends, however it ends.
+if [[ -n "${_RUN_EXPERIMENT_SELF:-}" ]]; then
+    trap 'rm -f "${_RUN_EXPERIMENT_SELF}"' EXIT
+fi
+
 N="${1:-${N:-5}}"
 COMPOSE="docker compose -f docker/compose.yaml"
 SIDE="${SIDE:-3}"; ALT="${ALT:-2.0}"; LEG_TIME="${LEG_TIME:-6}"; SETTLE="${SETTLE:-8}"

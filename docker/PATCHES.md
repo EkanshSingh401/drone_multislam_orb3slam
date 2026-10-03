@@ -1253,3 +1253,79 @@ OpenVINS is being compared against -- that remains stereo-inertial, like for
 like -- but it bounds what the sensor suite can deliver, and any VI result far
 from ~1 cm on this rig is an estimator or excitation problem, not a sensing
 limit.
+
+## 36. Gravity alone accounts for most of the stereo-inertial error, and nearly all of its variance
+
+One variable changed: PX4's worlds patched from `<gravity>0 0 -9.8` to `-9.81`,
+matching ORB-SLAM3's hardcoded `ImuTypes.h:46 GRAVITY_VALUE = 9.81`. Same rig,
+same path A, same image otherwise, same evaluation.
+
+| | gravity 9.8 (4 runs) | **gravity 9.81 (5 runs)** |
+|---|---|---|
+| ATE rmse | 1.369 +/- 0.856 m | **0.437 +/- 0.129 m** |
+| ATE range | 0.503 .. 2.367 | **0.306 .. 0.606** |
+| RPE rmse @1 m | 0.733 +/- 0.546 m | **0.228 +/- 0.087 m** |
+| real-time factor | 0.280 +/- 0.002 | 0.279 +/- 0.005 |
+| IMU init delay | 2.441 +/- 0.002 s | 2.443 +/- 0.002 s |
+| path length | 18.845 +/- 0.087 m | 18.881 +/- 0.098 m |
+
+**Mean error down 68%; sample standard deviation down 85%.** The worst run
+improved from 2.367 m to 0.606 m.
+
+The variance collapse is the more telling half. A 0.01 m/s^2 constant offset
+between the simulated world and the estimator's hardcoded constant is not a
+fixed bias that shifts every run equally -- it feeds the gravity-direction and
+accelerometer-bias states that VIBA solves for, and how badly it corrupts them
+depends on where in the flight the solve lands and what the motion happened to
+excite. Hence 9.8 produced 0.503 m on one run and 2.367 m on another, while 9.81
+produced 0.306-0.606 m across five.
+
+Per-run detail, with tracking losses (which still do not predict accuracy -- the
+best run, 0.306 m, had 13 losses; the worst, 0.606 m, had 0):
+
+| run | ATE | RPE | RTF | `Tracking LOST` |
+|---|---|---|---|---|
+| 1 | 0.499 | 0.177 | 0.280 | 0 |
+| 2 | 0.606 | 0.366 | 0.271 | 0 |
+| 3 | 0.467 | 0.258 | 0.280 | 0 |
+| 4 | 0.306 | 0.197 | 0.281 | 13 |
+| 5 | 0.309 | 0.144 | 0.283 | 7 |
+
+Provenance is recorded per experiment now (`MANIFEST.txt`):
+`world_gravity: <gravity>0 0 -9.81</gravity>`, `path_version: A`,
+`git_commit: b81e854`, `git_dirty: no`.
+
+**It does not close the gap to stereo-only.** 0.437 m against 0.0138 m is still
+~32x, which leaves the near-degenerate path A geometry (s35) as the remaining
+explanation and is what path B exists to test. Gravity was one of two identified
+causes, not the whole story.
+
+## 37. Editing a shell script while it is executing killed a completed experiment
+
+Bash reads a script **incrementally**, not all at once. Editing
+`run_experiment.sh` mid-run -- to add the `PATH_VERSION` passthrough,
+`RECORD_SENSORS` and the `d455_stereo` rig -- shifted byte offsets under the live
+interpreter, which then resumed reading at its old offset inside the new text:
+
+```
+./docker/scripts/run_experiment.sh: line 193: syntax error near unexpected token `done'
+SI_EXIT=2
+```
+
+All five runs had already completed and their data was intact (it is written per
+run), but the aggregation step was lost and had to be redone by hand.
+
+These experiments run for an hour or more and editing the harness while one is
+in flight is a normal thing to want to do, so the fix is in the script rather
+than in discipline: `run_experiment.sh` now copies itself to a temp file and
+`exec`s that, so a running experiment is immune to edits of the original.
+
+The copy deletes *itself* via an EXIT trap set after the re-exec. Trapping EXIT
+*before* the `exec` would not work -- `exec` replaces the process image, so that
+shell never exits and its traps are discarded, leaking a temp file per run.
+Verified: no `/tmp/run_experiment.*` remains after a run.
+
+Separately, the staleness guard did exactly its job in the same experiment. The
+three stereo-only runs refused to start because `record_and_eval.sh` had been
+edited (`STALE record_and_eval.sh`), rather than running with host and container
+scripts disagreeing. A non-zero exit there is a correct refusal, not a failure.
