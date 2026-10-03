@@ -5,3 +5,6 @@
 /build
 /install
 /log
+# Runtime outputs from the Docker stack (logs, bags, trajectories, evo results).
+# Bind-mounted to docker/out so they survive container restarts; not source.
+docker/out/

@@ -1,7 +1,0 @@
-[INFO] [1790980478.157018926] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/forest/model/x500_depth_1/link/camera_link/sensor/IMX214/image (gz.msgs.Image) -> uav_1/rgb/image_raw (sensor_msgs/msg/Image)] (Lazy 0)
-[INFO] [1790980478.162664134] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/forest/model/x500_depth_1/link/camera_link/sensor/IMX214/camera_info (gz.msgs.CameraInfo) -> uav_1/rgb/camera_info (sensor_msgs/msg/CameraInfo)] (Lazy 0)
-[INFO] [1790980478.164539176] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/depth_camera (gz.msgs.Image) -> uav_1/depth/image (sensor_msgs/msg/Image)] (Lazy 0)
-[INFO] [1790980478.165421134] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/camera_info (gz.msgs.CameraInfo) -> uav_1/depth/camera_info (sensor_msgs/msg/CameraInfo)] (Lazy 0)
-[INFO] [1790980478.166105134] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/depth_camera/points (gz.msgs.PointCloudPacked) -> uav_1/depth/points (sensor_msgs/msg/PointCloud2)] (Lazy 0)
-[INFO] [1790980478.167179467] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/forest/dynamic_pose/info (gz.msgs.Pose_V) -> ground_truth/pose_info (tf2_msgs/msg/TFMessage)] (Lazy 0)
-[INFO] [1790980478.169319509] [ros_gz_bridge]: Creating GZ->ROS Bridge: [/world/forest/clock (gz.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)

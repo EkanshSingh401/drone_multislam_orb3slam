@@ -70,11 +70,26 @@ class ScriptedFlight(Node):
             TrajectorySetpoint, f"{prefix}/fmu/in/trajectory_setpoint", qos)
         self.pub_cmd = self.create_publisher(
             VehicleCommand, f"{prefix}/fmu/in/vehicle_command", qos)
-        self.create_subscription(
-            VehicleStatus, f"{prefix}/fmu/out/vehicle_status", self._on_status, qos)
-        self.create_subscription(
-            VehicleLocalPosition, f"{prefix}/fmu/out/vehicle_local_position",
-            self._on_pos, qos)
+        # PX4 out-topic names depend on the firmware's message-versioning era.
+        # The pinned PX4 (main @ 6bc24c8c) publishes VERSIONED names:
+        #   /px4_1/fmu/out/vehicle_status_v1
+        #   /px4_1/fmu/out/vehicle_local_position_v1
+        # while older firmware uses the unversioned names. The message TYPES are
+        # unchanged (px4_msgs/msg/VehicleStatus, .../VehicleLocalPosition), only
+        # the topic names differ. Subscribing to both covers either firmware;
+        # only one will ever exist, and the callbacks just latch the newest
+        # sample, so a duplicate would be harmless anyway.
+        #
+        # Getting this wrong is silent: the node simply never receives status
+        # and sits in wait_for_fmu until it times out.
+        for suffix in ("_v1", ""):
+            self.create_subscription(
+                VehicleStatus, f"{prefix}/fmu/out/vehicle_status{suffix}",
+                self._on_status, qos)
+            self.create_subscription(
+                VehicleLocalPosition,
+                f"{prefix}/fmu/out/vehicle_local_position{suffix}",
+                self._on_pos, qos)
 
         self.status: VehicleStatus | None = None
         self.pos: VehicleLocalPosition | None = None

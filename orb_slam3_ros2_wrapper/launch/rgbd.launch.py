@@ -82,6 +82,22 @@ def generate_launch_description():
             'publish_tf': publish_tf.perform(context),
         }
 
+        # The use_sim_time launch argument was declared but never reached the
+        # node: it is absent from param_substitutions, from the ROS params YAML,
+        # and from the Node's parameters list, so the SLAM node always ran on
+        # the wall clock no matter what was passed.
+        #
+        # That silently corrupts any evaluation. Ground truth is bridged from
+        # Gazebo with use_sim_time:=true, so with the estimator on wall clock the
+        # two trajectories carry clocks that diverge by the real-time factor
+        # (~30x when RTF is 0.03), and evo would be aligning incomparable stamps.
+        #
+        # Passed as its own dict after configured_params so it wins regardless of
+        # whether RewrittenYaml inserts keys absent from the source YAML.
+        use_sim_time_value = (
+            LaunchConfiguration('use_sim_time').perform(context).strip().lower()
+            in ('true', '1', 'yes', 'on'))
+
 
         configured_params = RewrittenYaml(
             source_file=params_file,
@@ -96,7 +112,7 @@ def generate_launch_description():
             # prefix=["gdbserver localhost:3000"],
             namespace=namespace_value,
             arguments=[vocabulary_file_path, config_file_path],
-            parameters=[configured_params])
+            parameters=[configured_params, {'use_sim_time': use_sim_time_value}])
         
         return [declare_params_file_cmd, orb_slam3_node]
 

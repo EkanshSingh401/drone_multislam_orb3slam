@@ -104,12 +104,21 @@ wait_for "gz world '${WORLD}' is up" 120 \
 # -----------------------------------------------------------------------------
 log "starting PX4 SITL (instance ${PX4_INSTANCE}, model ${MODEL})"
 cd "${PX4_DIR}"
-PX4_GZ_STANDALONE=1 \
-PX4_SYS_AUTOSTART=4001 \
-PX4_SIM_MODEL="${MODEL}" \
-PX4_GZ_WORLD="${WORLD}" \
-PX4_GZ_MODEL_POSE="${MODEL_POSE}" \
-nohup "${PX4_DIR}/build/px4_sitl_default/bin/px4" -i "${PX4_INSTANCE}" \
+# -d = daemon mode: do NOT start the interactive pxh shell. Without it PX4 writes
+# its "pxh> " prompt plus an ANSI clear-line to the redirected log on every loop;
+# a ~45 min run produced a 72 MB px4.log of pure prompt spam.
+#
+# The env vars below MUST stay contiguous with the nohup line. A comment placed
+# between a backslash-continued assignment list and the command silently breaks
+# the continuation: bash then treats the assignments as a standalone statement
+# and runs px4 with NONE of them, which makes PX4 log "No autostart ID found"
+# and fall back to the SIH simulator (no Gazebo model, no sensors at all).
+env PX4_GZ_STANDALONE=1 \
+    PX4_SYS_AUTOSTART=4001 \
+    PX4_SIM_MODEL="${MODEL}" \
+    PX4_GZ_WORLD="${WORLD}" \
+    PX4_GZ_MODEL_POSE="${MODEL_POSE}" \
+    nohup "${PX4_DIR}/build/px4_sitl_default/bin/px4" -d -i "${PX4_INSTANCE}" \
     > "${LOGDIR}/px4.log" 2>&1 &
 
 # PX4 names the spawned model "<model>_<instance>", e.g. x500_depth_1, which is
