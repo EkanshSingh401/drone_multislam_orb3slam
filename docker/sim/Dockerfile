@@ -388,32 +388,50 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 
 # Assert the joint-covariance publisher was actually COMPILED IN.
 #
-# `ldd` is the AUTHORITATIVE check and is therefore the one that fails the build:
-# the binary either links the message library or it does not, regardless of what
-# any log says.
+# Checked on libov_msckf_lib.so, NOT on the run_subscribe_msckf executable, and
+# with objdump rather than ldd. Both choices are corrections of earlier mistakes:
 #
-# The configure-log check is secondary and deliberately non-fatal. It first cost
-# a build: colcon does NOT put per-package CMake output on its console by
-# default -- it captures it into log/latest_build/<pkg>/ and prints only a
-# summary -- so grepping the console log for ov_msckf's
-# `message(STATUS "... active_slam_msgs FOUND ...")` found nothing and failed a
-# build whose ov_msckf had linked the library perfectly well.
-# --event-handlers console_direct+ now routes that output into the log, and both
-# that log and colcon's own per-package log are searched, but a miss only warns.
+#   * ROS2Visualizer.cpp compiles into libov_msckf_lib.so, so active_slam_msgs
+#     is a dependency of THAT library, not of the executable.
+#   * `ldd` only enumerates dependencies it can RESOLVE. In an unsourced RUN
+#     layer it reports "libov_msckf_lib.so => not found" and therefore never
+#     looks inside it, so an ldd-on-the-executable test reports "not linked"
+#     for a perfectly good build. That exact false negative failed a build whose
+#     six packages had all compiled successfully.
+#
+# objdump -p reads DT_NEEDED straight out of the ELF header and needs no
+# loader path, no sourced environment and no resolvable libraries.
+#
+# The `strings` check is independent of the link check and catches the case that
+# actually matters: OV_JOINT_COV_AVAILABLE undefined, so the publisher is
+# #ifdef'd out even though the library happens to link. The topic name is
+# present as a literal only if that code was compiled.
+#
+# NOTE the `> /dev/null` instead of `grep -q`. This image's SHELL sets
+# `-o pipefail`, and `grep -q` exits the instant it matches, closing the pipe;
+# the upstream `strings` then dies of SIGPIPE, and pipefail propagates THAT
+# failure even though the match succeeded. The check reported "topic literal
+# absent" for a library that demonstrably contains it (verified afterwards with
+# objdump -s -j .rodata). Without -q, grep reads to EOF and no SIGPIPE occurs.
+# The objdump pipeline above is written the same way -- it only passed by luck,
+# its output being small enough to be written before grep exited.
 RUN set -eux; \
-    ldd ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
-        | grep -q active_slam_msgs \
-        || { echo "FATAL: run_subscribe_msckf does not link active_slam_msgs."; \
-             echo "  The joint-covariance publisher was compiled out; /openvins/joint_covariance"; \
-             echo "  would never appear. Build active_slam_msgs BEFORE ov_msckf."; \
-             ldd ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf | head -30; \
+    LIB=$(find ${WS}/install/ov_msckf -name 'libov_msckf_lib.so*' -print -quit); \
+    test -n "${LIB}" || { echo "FATAL: libov_msckf_lib.so not found"; exit 1; }; \
+    echo "checking ${LIB}"; \
+    objdump -p "${LIB}" | grep NEEDED | grep active_slam_msgs > /dev/null \
+        || { echo "FATAL: libov_msckf_lib.so has no DT_NEEDED on active_slam_msgs."; \
+             echo "  find_package(active_slam_msgs QUIET) failed at configure time, so"; \
+             echo "  the joint-covariance publisher was compiled out and"; \
+             echo "  /openvins/joint_covariance would never appear."; \
+             echo "  Build active_slam_msgs BEFORE ov_msckf (see above)."; \
+             objdump -p "${LIB}" | grep NEEDED; exit 1; }; \
+    strings "${LIB}" | grep '/openvins/joint_covariance' > /dev/null \
+        || { echo "FATAL: the topic name /openvins/joint_covariance is absent from"; \
+             echo "  libov_msckf_lib.so, so the publisher is #ifdef'd out even though"; \
+             echo "  the library links active_slam_msgs. Check OV_JOINT_COV_AVAILABLE."; \
              exit 1; }; \
-    if grep -qr "active_slam_msgs FOUND" /tmp/ov_build.log \
-         ${WS}/log/latest_build/ov_msckf/ 2>/dev/null; then \
-        echo "joint covariance publisher IS compiled in (ldd + configure log agree)"; \
-    else \
-        echo "joint covariance publisher IS compiled in (ldd); configure-log line not captured"; \
-    fi
+    echo "joint covariance publisher IS compiled in (DT_NEEDED + topic literal)"
 
 # -----------------------------------------------------------------------------
 # 10. Runtime environment
