@@ -13,6 +13,25 @@ set -eo pipefail
 N="${1:-${N:-5}}"
 COMPOSE="docker compose -f docker/compose.yaml"
 SIDE="${SIDE:-3}"; ALT="${ALT:-2.0}"; LEG_TIME="${LEG_TIME:-6}"; SETTLE="${SETTLE:-8}"
+
+# RIG=depth  -> phase-1 x500_depth, ORB-SLAM3 RGB-D, COVINS backend
+# RIG=d455   -> phase-2 D455-mirror, ORB-SLAM3 STEREO-INERTIAL, depth camera OFF
+RIG="${RIG:-depth}"
+case "${RIG}" in
+  depth)
+    RIG_ENV="MODEL=gz_x500_depth SLAM_MODE=rgbd"
+    EVAL_ENV="EST_TOPIC=/uav_1/robot_pose_slam"
+    USE_COVINS=1 ;;
+  d455)
+    # D455_DEPTH=0 selects the depth-free model: neither stereo-inertial nor
+    # OpenVINS consumes depth, and a third 848x480 render pass is pure RTF cost.
+    RIG_ENV="MODEL=gz_x500_d455 D455_DEPTH=0 SLAM_MODE=stereo_inertial"
+    # The stereo-inertial node runs in the root namespace.
+    EVAL_ENV="EST_TOPIC=/robot_pose_slam"
+    # COVINS is a phase-1 concern; the stereo-inertial baseline does not use it.
+    USE_COVINS=0 ;;
+  *) echo "RIG must be depth or d455" >&2; exit 2 ;;
+esac
 OUT="docker/out/experiment_$(date +%Y%m%d-%H%M%S)"
 mkdir -p "${OUT}"
 
@@ -40,21 +59,25 @@ if [[ ${STALE} -ne 0 ]]; then
     exit 1
 fi
 
-echo "=== experiment: ${N} runs, side=${SIDE}m alt=${ALT}m leg=${LEG_TIME}s -> ${OUT} ==="
+echo "=== experiment: rig=${RIG} ${N} runs, side=${SIDE}m alt=${ALT}m leg=${LEG_TIME}s -> ${OUT} ==="
+echo "    rig env : ${RIG_ENV}"
+echo "    eval env: ${EVAL_ENV}"
 
 for i in $(seq 1 "${N}"); do
     echo
     echo "################ RUN ${i}/${N} ################"
 
-    # --- fresh backend (empty COVINS map) ---
-    ${COMPOSE} restart covins-backend >/dev/null 2>&1
-    sleep 12
-    ${COMPOSE} exec -d covins-backend /opt/scripts/run_backend.sh
-    for _ in $(seq 1 90); do
-        ${COMPOSE} exec -T covins-backend netstat -ltn 2>/dev/null | grep -q ':9033' && break
-        sleep 2
-    done
-    echo "run ${i}: backend listening"
+    # --- fresh backend (empty COVINS map), phase-1 rig only ---
+    if [[ "${USE_COVINS}" == "1" ]]; then
+        ${COMPOSE} restart covins-backend >/dev/null 2>&1
+        sleep 12
+        ${COMPOSE} exec -d covins-backend /opt/scripts/run_backend.sh
+        for _ in $(seq 1 90); do
+            ${COMPOSE} exec -T covins-backend netstat -ltn 2>/dev/null | grep -q ':9033' && break
+            sleep 2
+        done
+        echo "run ${i}: backend listening"
+    fi
 
     # --- fresh sim stack ---
     ${COMPOSE} exec -T sim /opt/scripts/bringup_sim.sh --stop >/dev/null 2>&1 || true
@@ -77,17 +100,27 @@ for i in $(seq 1 "${N}"); do
 
     # --- flight + record ---
     ${COMPOSE} exec -T sim env SIDE="${SIDE}" ALT="${ALT}" LEG_TIME="${LEG_TIME}" \
-        SETTLE="${SETTLE}" /opt/scripts/record_and_eval.sh \
+        SETTLE="${SETTLE}" ${EVAL_ENV} /opt/scripts/record_and_eval.sh \
         > "${OUT}/run${i}_flight.log" 2>&1 || echo "run ${i}: record_and_eval returned $?"
 
     RUNDIR=$(grep -oE '/out/eval/[0-9-]+' "${OUT}/run${i}_flight.log" | head -1)
     echo "run ${i}: rundir ${RUNDIR}"
 
     # --- COVINS trajectory, then re-evaluate including it ---
-    ${COMPOSE} exec -T covins-backend /opt/scripts/export_covins_trajectory.sh \
-        > "${OUT}/run${i}_covins_export.log" 2>&1 || echo "run ${i}: covins export returned $?"
-    ${COMPOSE} exec -T sim /opt/scripts/record_and_eval.sh --eval-only "${RUNDIR}" \
+    if [[ "${USE_COVINS}" == "1" ]]; then
+        ${COMPOSE} exec -T covins-backend /opt/scripts/export_covins_trajectory.sh \
+            > "${OUT}/run${i}_covins_export.log" 2>&1 || echo "run ${i}: covins export returned $?"
+    fi
+    ${COMPOSE} exec -T sim env ${EVAL_ENV} /opt/scripts/record_and_eval.sh --eval-only "${RUNDIR}" \
         > "${OUT}/run${i}_eval.log" 2>&1 || echo "run ${i}: eval returned $?"
+
+    # post-hoc RTF/path from the bag -- the only trustworthy source (see
+    # analyze_bag.py for why the live alternatives are not)
+    ${COMPOSE} exec -T sim bash -c "source /opt/ros/\${ROS_DISTRO}/setup.bash; \
+        source /root/ws_offboard_control/install/setup.bash; \
+        python3 /opt/scripts/analyze_bag.py '${RUNDIR}/flight.bag' --json" \
+        < /dev/null > "${OUT}/run${i}_bag.json" 2>/dev/null || true
+    cp -f "docker/out/eval/$(basename "${RUNDIR}")/imu_init.txt" "${OUT}/run${i}_imu_init.txt" 2>/dev/null || true
 
     cp -f "docker/out/eval/$(basename "${RUNDIR}")/rates.log" "${OUT}/run${i}_rates.log" 2>/dev/null || true
     echo "${RUNDIR}" >> "${OUT}/rundirs.txt"

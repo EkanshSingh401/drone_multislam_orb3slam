@@ -14,6 +14,12 @@ set -o pipefail    # no -u: ROS setup.bash reads unset vars
 
 NAMESPACE="${NAMESPACE:-uav_1}"
 MODEL="${MODEL:-x500_depth_1}"
+# Estimate topic. The phase-1 RGB-D node runs inside the uav_1 namespace; the
+# phase-2 stereo-inertial node runs in the root namespace, so its pose lands on
+# /robot_pose_slam.
+EST_TOPIC="${EST_TOPIC:-/${NAMESPACE}/robot_pose_slam}"
+# Which rig's monitor topic set to sample (clock-only either way).
+MON_NS="${MON_NS:-${NAMESPACE}}"
 OUTROOT="${OUTROOT:-/out/eval}"
 SIDE="${SIDE:-5}"
 ALT="${ALT:-2.0}"
@@ -37,22 +43,22 @@ else
     hr; echo "RECORDING + SCRIPTED FLIGHT -> ${RUNDIR}"; hr
 
     # Sanity-check the inputs before flying, so a failed run is diagnosable.
-    for t in "/${NAMESPACE}/robot_pose_slam" "/ground_truth/pose_info"; do
+    for t in "${EST_TOPIC}" "/ground_truth/pose_info"; do
         if ! ros2 topic info "$t" >/dev/null 2>&1; then
             echo "record_and_eval: required topic $t does not exist." >&2
             echo "  Is the stack up? Run /opt/scripts/bringup_sim.sh first." >&2
             exit 1
         fi
     done
-    if ! timeout 20 ros2 topic echo "/${NAMESPACE}/robot_pose_slam" --once >/dev/null 2>&1; then
-        echo "record_and_eval: WARNING no pose on /${NAMESPACE}/robot_pose_slam yet." >&2
+    if ! timeout 20 ros2 topic echo "${EST_TOPIC}" --once >/dev/null 2>&1; then
+        echo "record_and_eval: WARNING no pose on ${EST_TOPIC} yet." >&2
         echo "  ORB-SLAM3 has probably not initialised. Recording anyway, but the" >&2
         echo "  estimate may be empty or start late." >&2
     fi
 
     echo "--> starting rosbag2"
     ros2 bag record -s mcap -o "${RUNDIR}/flight.bag" \
-        "/${NAMESPACE}/robot_pose_slam" \
+        "${EST_TOPIC}" \
         "/ground_truth/pose_info" \
         /clock /tf /tf_static \
         > "${RUNDIR}/rosbag.log" 2>&1 &
@@ -63,7 +69,7 @@ else
     # real_time_factor is instantaneous and bimodal (0.032 vs 0.538 on identical
     # setups), so the only trustworthy figure is sim-time/wall-time over the
     # window, which rate_monitor computes from /clock.
-    python3 -u /opt/scripts/rate_monitor.py --namespace "${NAMESPACE}" \
+    python3 -u /opt/scripts/rate_monitor.py --namespace "${MON_NS}" \
         --duration "${MONITOR_DURATION:-900}" --window 15 \
         --out "${RUNDIR}/rates.csv" > "${RUNDIR}/rates.log" 2>&1 &
     MON_PID=$!
@@ -114,7 +120,7 @@ python3 /opt/scripts/bag_to_tum.py "${BAG}" --list --out /dev/null || true
 
 hr; echo "EXTRACTING TRAJECTORIES (TUM)"; hr
 python3 /opt/scripts/bag_to_tum.py "${BAG}" \
-    --pose-topic "/${NAMESPACE}/robot_pose_slam" \
+    --pose-topic "${EST_TOPIC}" \
     --out "${RUNDIR}/est_orbslam3.tum"
 EST_OK=$?
 
@@ -168,6 +174,47 @@ run_evo() {  # run_evo <label> <est.tum>
 }
 
 run_evo "orbslam3" "${RUNDIR}/est_orbslam3.tum"
+
+# -----------------------------------------------------------------------------
+# Stereo-inertial only: evaluate again from IMU initialisation onwards.
+# -----------------------------------------------------------------------------
+# ORB-SLAM3 needs motion before it can initialise the IMU (scale, gravity
+# direction, biases). Until then the estimate is effectively visual-only and
+# drags the ATE down, so the post-init window is the figure that characterises
+# stereo-inertial performance. Both are reported; neither alone is honest.
+SLAM_LOG="${LOGDIR:-/out/logs}/orb_slam3.log"
+if [[ -f "${SLAM_LOG}" ]]; then
+    IMU_INIT_T=$(sed 's/\x1b\[[0-9;]*m//g' "${SLAM_LOG}" \
+        | grep -oE 'IMU INITIALISED at frame t=[0-9.]+' | head -1 \
+        | grep -oE '[0-9.]+$' || true)
+    FIRST_T=$(sed 's/\x1b\[[0-9;]*m//g' "${SLAM_LOG}" \
+        | grep -oE 'first stereo pair at t=[0-9.]+' | head -1 \
+        | grep -oE '[0-9.]+$' || true)
+    {
+      echo "imu_init_stamp=${IMU_INIT_T:-none}"
+      echo "first_frame_stamp=${FIRST_T:-none}"
+      if [[ -n "${IMU_INIT_T}" && -n "${FIRST_T}" ]]; then
+          echo "imu_init_delay_s=$(python3 -c "print(f'{${IMU_INIT_T}-${FIRST_T}:.3f}')")"
+      fi
+    } > "${RUNDIR}/imu_init.txt"
+    hr; echo "IMU INITIALISATION"; hr
+    cat "${RUNDIR}/imu_init.txt" | sed 's/^/  /'
+    if [[ -n "${IMU_INIT_T}" ]]; then
+        hr; echo "ATE (evo_ape) -- orbslam3 AFTER IMU init (t >= ${IMU_INIT_T})"; hr
+        evo_ape tum "${RUNDIR}/gt.tum" "${RUNDIR}/est_orbslam3.tum" \
+            -a --t_max_diff 0.05 --t_start "${IMU_INIT_T}" \
+            --save_results "${RUNDIR}/ape_orbslam3_postinit.zip" \
+            2>&1 | tee "${RUNDIR}/ape_orbslam3_postinit.txt"
+        hr; echo "RPE (evo_rpe) -- orbslam3 AFTER IMU init"; hr
+        evo_rpe tum "${RUNDIR}/gt.tum" "${RUNDIR}/est_orbslam3.tum" \
+            -a --t_max_diff 0.05 --delta 1 --delta_unit m --t_start "${IMU_INIT_T}" \
+            --save_results "${RUNDIR}/rpe_orbslam3_postinit.zip" \
+            2>&1 | tee "${RUNDIR}/rpe_orbslam3_postinit.txt"
+    else
+        echo "  (no IMU initialisation line in the SLAM log -- either this was an"
+        echo "   RGB-D run, or stereo-inertial never initialised its IMU)"
+    fi
+fi
 
 # -----------------------------------------------------------------------------
 # COVINS optimised trajectory

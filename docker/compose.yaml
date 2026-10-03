@@ -58,6 +58,13 @@ services:
       # sys.trajectory_format) -- this is what gets evaluated against ground truth.
       - covins_output:/root/covins_ws/src/covins/covins_backend/output
       - ./out:/out
+    # init: true runs tini as PID 1 so orphaned children get REAPED. Without it
+    # the container's PID 1 is "sleep infinity", which never calls wait(), and
+    # every killed gz/px4/bridge/SLAM process left a <defunct> entry behind --
+    # 37 zombies accumulated across a five-run experiment. They cost no CPU, but
+    # they made `pgrep -c` count dead processes and sent me chasing a phantom
+    # "leaked process" explanation for a real-time-factor decay.
+    init: true
     shm_size: "1gb"
     stop_grace_period: 10s
     # Keep the container alive; the backend node is started via
@@ -100,6 +107,13 @@ services:
       - ./out:/out
     # Fast DDS shared-memory transport needs real /dev/shm headroom; the 64 MB
     # Docker default causes dropped image samples at 640x480.
+    # init: true runs tini as PID 1 so orphaned children get REAPED. Without it
+    # the container's PID 1 is "sleep infinity", which never calls wait(), and
+    # every killed gz/px4/bridge/SLAM process left a <defunct> entry behind --
+    # 37 zombies accumulated across a five-run experiment. They cost no CPU, but
+    # they made `pgrep -c` count dead processes and sent me chasing a phantom
+    # "leaked process" explanation for a real-time-factor decay.
+    init: true
     shm_size: "2gb"
     stop_grace_period: 10s
     command: ["sleep", "infinity"]

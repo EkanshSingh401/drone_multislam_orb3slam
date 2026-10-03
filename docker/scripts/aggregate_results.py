@@ -8,6 +8,7 @@ point of repeating is to show how much it moves.
 """
 from __future__ import annotations
 
+import json
 import re
 import statistics
 import sys
@@ -88,13 +89,50 @@ def main() -> int:
         rpe_o = parse_evo(rd / "rpe_orbslam3.txt")
         ape_c = parse_evo(rd / "ape_covins.txt")
         rpe_c = parse_evo(rd / "rpe_covins.txt")
+        ape_pi = parse_evo(rd / "ape_orbslam3_postinit.txt")
+        rpe_pi = parse_evo(rd / "rpe_orbslam3_postinit.txt")
         r = parse_rates(root / f"run{i}_rates.log")
-        per_run.append((f"run{i}", {"ape_o": ape_o.get("rmse", float('nan')),
-                                    "rpe_o": rpe_o.get("rmse", float('nan')),
-                                    "ape_c": ape_c.get("rmse", float('nan')),
-                                    "rpe_c": rpe_c.get("rmse", float('nan'))}, r))
+
+        # Prefer the POST-HOC bag analysis for RTF/duration/path: the live
+        # monitor can be starved or miss discovery entirely, and Gazebo's own
+        # real_time_factor field is instantaneous and bimodal.
+        bagf = root / f"run{i}_bag.json"
+        if bagf.exists():
+            try:
+                b = json.loads(bagf.read_text())
+                for k_src, k_dst in (("rtf", "rtf"), ("sim_s", "sim_s"),
+                                     ("path_length_m", "path_m"),
+                                     ("wall_s", "wall_s")):
+                    if k_src in b:
+                        r[k_dst] = float(b[k_src])
+            except Exception:
+                pass
+
+        init = {}
+        initf = root / f"run{i}_imu_init.txt"
+        if initf.exists():
+            for line in initf.read_text().splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    try:
+                        init[k.strip()] = float(v)
+                    except ValueError:
+                        init[k.strip()] = v.strip()
+        per_run.append((f"run{i}", {
+            "ape_o": ape_o.get("rmse", float('nan')),
+            "rpe_o": rpe_o.get("rmse", float('nan')),
+            "ape_c": ape_c.get("rmse", float('nan')),
+            "rpe_c": rpe_c.get("rmse", float('nan')),
+            "ape_pi": ape_pi.get("rmse", float('nan')),
+            "rpe_pi": rpe_pi.get("rmse", float('nan')),
+            "init_delay": init.get("imu_init_delay_s", float('nan')),
+        }, r))
         for k, v in (("ORB-SLAM3 ATE rmse", ape_o.get("rmse")),
                      ("ORB-SLAM3 RPE rmse", rpe_o.get("rmse")),
+                     ("ORB ATE post-IMU-init", ape_pi.get("rmse")),
+                     ("ORB RPE post-IMU-init", rpe_pi.get("rmse")),
+                     ("IMU init delay (s)", init.get("imu_init_delay_s")
+                      if isinstance(init.get("imu_init_delay_s"), float) else None),
                      ("COVINS    ATE rmse", ape_c.get("rmse")),
                      ("COVINS    RPE rmse", rpe_c.get("rmse"))):
             if v is not None:
@@ -102,15 +140,20 @@ def main() -> int:
         for k, v in r.items():
             rates.setdefault(k, []).append(v)
 
-    print("\nPER-RUN (ATE/RPE RMSE, metres)")
-    print(f"  {'run':<6} {'ORB ATE':>9} {'ORB RPE':>9} {'COV ATE':>9} {'COV RPE':>9} {'RTF':>7} {'sim s':>7}")
+    print("\nPER-RUN  (RMSE in metres; RTF/sim/path are POST-HOC from the bag)")
+    print(f"  {'run':<6} {'ORB ATE':>8} {'ORB RPE':>8} {'postATE':>8} {'postRPE':>8}"
+          f" {'IMUinit':>8} {'COV ATE':>8} {'COV RPE':>8} {'RTF':>6} {'sim s':>6} {'path m':>7}")
     for name, m, r in per_run:
-        def f(x): return f"{x:9.3f}" if x == x else "      n/a"
-        print(f"  {name:<6}{f(m['ape_o'])}{f(m['rpe_o'])}{f(m['ape_c'])}{f(m['rpe_c'])}"
-              f" {r.get('rtf', float('nan')):7.3f} {r.get('sim_s', float('nan')):7.1f}")
+        def f(x, w=8): return f"{x:{w}.3f}" if x == x else " " * (w - 3) + "n/a"
+        print(f"  {name:<6}{f(m['ape_o'])}{f(m['rpe_o'])}{f(m['ape_pi'])}{f(m['rpe_pi'])}"
+              f"{f(m['init_delay'])}{f(m['ape_c'])}{f(m['rpe_c'])}"
+              f" {r.get('rtf', float('nan')):6.3f} {r.get('sim_s', float('nan')):6.1f}"
+              f" {r.get('path_m', float('nan')):7.2f}")
 
     print("\nAGGREGATE  (mean +/- sample stdev [min..max])")
     for k in ("ORB-SLAM3 ATE rmse", "ORB-SLAM3 RPE rmse",
+              "ORB ATE post-IMU-init", "ORB RPE post-IMU-init",
+              "IMU init delay (s)",
               "COVINS    ATE rmse", "COVINS    RPE rmse"):
         if k in collected:
             print(f"  {k:<22} {stats(collected[k])}")

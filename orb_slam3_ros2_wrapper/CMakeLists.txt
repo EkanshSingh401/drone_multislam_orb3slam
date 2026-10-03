@@ -167,6 +167,20 @@ add_executable(stereo
   src/stereo/stereo-slam-node.cpp
   src/stereo/stereo.cpp
 )
+
+# STEREO-INERTIAL (System::IMU_STEREO). The wrapper shipped no stereo-inertial
+# node even though ORB-SLAM3 supports the mode; this one composes the stereo
+# node's pair sync with the rgbd-imu node's buffered IMU drain.
+add_executable(stereo_inertial
+  src/stereo-inertial/stereo-inertial-slam-node.cpp
+  src/stereo-inertial/stereo_inertial.cpp
+)
+ament_target_dependencies(stereo_inertial ${dependencies})
+target_link_libraries(stereo_inertial orb_slam3_ros2_wrapper_common ${PCL_LIBRARIES})
+if(ORB_SLAM3_ROS2_WRAPPER_ENABLE_CUDA)
+  set_target_properties(stereo_inertial PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+  target_compile_definitions(stereo_inertial PRIVATE ORB_SLAM3_ROS2_WRAPPER_ENABLE_CUDA=1)
+endif()
 ament_target_dependencies(stereo ${dependencies})
 target_link_libraries(stereo orb_slam3_ros2_wrapper_common ${PCL_LIBRARIES})
 if(ORB_SLAM3_ROS2_WRAPPER_ENABLE_CUDA)
@@ -192,7 +206,7 @@ install(TARGETS orb_slam3_ros2_wrapper_common
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin)
 
-install(TARGETS rgbd rgbd_imu mono_imu stereo
+install(TARGETS rgbd rgbd_imu mono_imu stereo stereo_inertial
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch params

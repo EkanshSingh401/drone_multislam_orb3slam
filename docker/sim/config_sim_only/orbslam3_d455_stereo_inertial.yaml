@@ -36,11 +36,16 @@ Stereo.b: 0.095000
 Stereo.ThDepth: 40.0
 
 # --- IMU ---------------------------------------------------------------------
-IMU.NoiseGyro: 0.00016    # rad/s/sqrt(Hz)
-IMU.NoiseAcc: 0.002     # m/s^2/sqrt(Hz)
-IMU.GyroWalk: 2e-06       # rad/s^2
-IMU.AccWalk: 0.0003        # m/s^3
-IMU.Frequency: 200
+# Written in exponent form with an explicit mantissa decimal point. ORB-SLAM3
+# reads these with readParameter<float>, which rejects anything OpenCV
+# FileStorage does not classify as real: an integer literal aborts startup with
+# "<name> parameter must be a real number, aborting...". IMU.Frequency: 200
+# failed exactly that way, while Camera.fps genuinely is read as an int.
+IMU.NoiseGyro: 1.6000000000e-04    # rad/s/sqrt(Hz)
+IMU.NoiseAcc: 2.0000000000e-03     # m/s^2/sqrt(Hz)
+IMU.GyroWalk: 2.0000000000e-06       # rad/s^2
+IMU.AccWalk: 3.0000000000e-04        # m/s^3
+IMU.Frequency: 200.0
 
 # Transform body(IMU) <- camera1(optical). Exact, not estimated: the same spec
 # generates the SDF, so this is ground truth by construction.

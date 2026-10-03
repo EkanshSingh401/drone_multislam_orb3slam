@@ -26,6 +26,14 @@ BRIDGE_CFG="${BRIDGE_CFG:-}"
 PROBE_SENSOR="${PROBE_SENSOR:-}"
 PROBE_ROS="${PROBE_ROS:-}"
 START_SLAM="${START_SLAM:-1}"
+# D455_DEPTH=1 keeps the depth camera (default). 0 selects the depth-free model
+# variant for SLAM evaluation: neither ORB-SLAM3 stereo-inertial nor OpenVINS
+# consumes depth, and rendering it is a third 848x480 pass per frame -- pure
+# real-time-factor cost. IR stays 848x480 either way, because resolution changes
+# feature counts and must match the hardware.
+D455_DEPTH="${D455_DEPTH:-1}"
+# SLAM_MODE: rgbd (phase-1 x500_depth) | stereo_inertial (phase-2 D455 rig)
+SLAM_MODE="${SLAM_MODE:-rgbd}"
 MODEL_POSE="${MODEL_POSE:-0,0,0.25}"
 PX4_DIR="${PX4_DIR:-/opt/PX4-Autopilot}"
 WS="${WS:-/root/ws_offboard_control}"
@@ -46,7 +54,28 @@ while [[ $# -gt 0 ]]; do
             pkill -f 'bin/px4' 2>/dev/null || true
             pkill -f 'gz sim' 2>/dev/null || true
             pkill -f 'ruby.*gz' 2>/dev/null || true
-            sleep 2; echo "stopped."; exit 0 ;;
+            # Verify rather than assume. A surviving gz server would be
+            # competing with the next run's, and the real-time factor would
+            # silently degrade run over run.
+            for attempt in 1 2 3; do
+                sleep 2
+                remaining=$(pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' | wc -l | tr -d ' ')
+                [[ "${remaining}" == "0" ]] && break
+                echo "  ${remaining} process(es) still alive, escalating (attempt ${attempt})"
+                pkill -KILL -f 'gz sim' 2>/dev/null || true
+                pkill -KILL -f 'bin/px4' 2>/dev/null || true
+                pkill -KILL -f parameter_bridge 2>/dev/null || true
+                pkill -KILL -f MicroXRCEAgent 2>/dev/null || true
+                pkill -KILL -f orb_slam3_ros2_wrapper 2>/dev/null || true
+                pkill -KILL -f static_transform_publisher 2>/dev/null || true
+                pkill -KILL -f px4_gcs.py 2>/dev/null || true
+            done
+            remaining=$(pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' | wc -l | tr -d ' ')
+            if [[ "${remaining}" != "0" ]]; then
+                echo "WARNING: ${remaining} process(es) survived --stop" >&2
+                exit 1
+            fi
+            echo "stopped (verified clean)."; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
@@ -55,8 +84,14 @@ done
 case "${MODEL}" in
     *x500_d455*)
         : "${PROBE_SENSOR:=sensor/infra1/image}"
-        : "${PROBE_ROS:=/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/depth/image_rect_raw /camera/imu}"
-        : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455.yaml}"
+        if [[ "${D455_DEPTH}" == "1" ]]; then
+            : "${PROBE_ROS:=/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/depth/image_rect_raw /camera/imu}"
+            : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455.yaml}"
+        else
+            MODEL="gz_x500_d455_nodepth"
+            : "${PROBE_ROS:=/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/imu}"
+            : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455_nodepth.yaml}"
+        fi
         ;;
     *)
         : "${PROBE_SENSOR:=sensor/IMX214/image}"
@@ -254,10 +289,17 @@ if [[ "${START_SLAM}" != "1" ]]; then
     exit 0
 fi
 
-log "starting ORB-SLAM3 RGB-D for ${NAMESPACE} (loads the ORB vocabulary; this takes ~30-60 s)"
-nohup ros2 launch orb_slam3_ros2_wrapper rgbd.launch.py \
-    robot_namespace:="${NAMESPACE}" use_sim_time:=true \
-    > "${LOGDIR}/orb_slam3.log" 2>&1 &
+if [[ "${SLAM_MODE}" == "stereo_inertial" ]]; then
+    log "starting ORB-SLAM3 STEREO-INERTIAL (loads the ORB vocabulary; ~30-60 s)"
+    nohup ros2 launch orb_slam3_ros2_wrapper stereo_inertial.launch.py \
+        use_sim_time:=true \
+        > "${LOGDIR}/orb_slam3.log" 2>&1 &
+else
+    log "starting ORB-SLAM3 RGB-D for ${NAMESPACE} (loads the ORB vocabulary; this takes ~30-60 s)"
+    nohup ros2 launch orb_slam3_ros2_wrapper rgbd.launch.py \
+        robot_namespace:="${NAMESPACE}" use_sim_time:=true \
+        > "${LOGDIR}/orb_slam3.log" 2>&1 &
+fi
 
 wait_for "ORB-SLAM3 node registered" 300 \
     bash -c "ros2 node list 2>/dev/null | grep -qi 'ORB_SLAM3\|orb_slam3'" \

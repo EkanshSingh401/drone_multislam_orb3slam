@@ -336,7 +336,7 @@ ENV GZ_SIM_RESOURCE_PATH=/opt/sim_models:${PX4_DIR}/Tools/simulation/gz/models:$
 # even though `gz` itself could resolve it. Symlink our models into PX4's tree:
 # the repo stays the single source of truth, and the link makes the provenance
 # obvious to anyone poking around in the container.
-RUN set -eux;     for m in d455 x500_d455; do         ln -sfn "/opt/sim_models/$m" "${PX4_DIR}/Tools/simulation/gz/models/$m";         test -f "${PX4_DIR}/Tools/simulation/gz/models/$m/model.sdf";     done;     echo "linked sim-only models into PX4_GZ_MODELS"
+RUN set -eux;     for m in d455 x500_d455 d455_nodepth x500_d455_nodepth; do         ln -sfn "/opt/sim_models/$m" "${PX4_DIR}/Tools/simulation/gz/models/$m";         test -f "${PX4_DIR}/Tools/simulation/gz/models/$m/model.sdf";     done;     echo "linked sim-only models into PX4_GZ_MODELS"
 # No GPU passthrough on macOS Docker: force Mesa software rasterisation for both
 # the Gazebo sensor pipeline (ogre2) and RViz.
 ENV LIBGL_ALWAYS_SOFTWARE=1
