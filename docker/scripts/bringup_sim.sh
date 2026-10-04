@@ -85,16 +85,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Defaults that depend on which rig was selected.
+# The bridge config embeds the gz world name in every topic path, so each world
+# has its own generated file: forest uses the unsuffixed name, any other world
+# (e.g. "validation", PATCHES.md s49) uses _<world>.
+if [[ "${WORLD}" == "forest" ]]; then W_SUF=""; else W_SUF="_${WORLD}"; fi
 case "${MODEL}" in
     *x500_d455*)
         : "${PROBE_SENSOR:=sensor/infra1/image}"
         if [[ "${D455_DEPTH}" == "1" ]]; then
             : "${PROBE_ROS:=/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/depth/image_rect_raw /camera/imu}"
-            : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455.yaml}"
+            : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455${W_SUF}.yaml}"
         else
             MODEL="gz_x500_d455_nodepth"
             : "${PROBE_ROS:=/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/imu}"
-            : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455_nodepth.yaml}"
+            : "${BRIDGE_CFG:=/opt/config_sim_only/gz_bridge_d455_nodepth${W_SUF}.yaml}"
         fi
         ;;
     *)

@@ -336,7 +336,9 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # truth for what actually runs.
 # 5aa2c83 adds ros2_serial_msckf, the deterministic bag-reading runner used for
 # all phase-3 evaluation (PATCHES.md s47); run_subscribe_msckf is unchanged.
-ARG OPEN_VINS_COMMIT=5aa2c83249dd1edf47f2bf961ebf863eeee0649d
+# 5b14b93 adds DEBUG-level scene-degradation logging ([FI] [MSCKF] [TRACK] [GRID]);
+# estimator output verified byte-identical to 5aa2c83 (PATCHES.md s49).
+ARG OPEN_VINS_COMMIT=5b14b93ed527ce3fb49e496b8f85fe9b3c009d3f
 ARG ACTIVE_SLAM_MSGS_COMMIT=a0790aafdb8dffa0eb33a0e7f471071d1edb9426
 ARG ACTIVE_SLAM_PLANNER_COMMIT=f56e1146256f009bc71a3b4c644afc8c7f2dcd14
 ARG ACTIVE_SLAM_INFORMATION_COMMIT=e2250686130f0d92adfb2bd126735638dddaf424
@@ -455,11 +457,13 @@ RUN set -eux; \
 # its spec. Kept in a SIM-ONLY directory so they can never be mistaken for, or
 # overwrite, calibration files for real hardware.
 COPY docker/sim/models           /opt/sim_models
+# Generated scenes beyond PX4's own worlds (PATCHES.md s49: "validation").
+COPY docker/sim/worlds           /opt/sim_worlds
 COPY docker/sim/config_sim_only  /opt/config_sim_only
 
 # Our models come FIRST so they take precedence, then PX4's (x500_d455 includes
 # PX4's x500 base, so both paths are needed).
-ENV GZ_SIM_RESOURCE_PATH=/opt/sim_models:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds
+ENV GZ_SIM_RESOURCE_PATH=/opt/sim_models:/opt/sim_worlds:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds
 
 # PX4 does NOT look on GZ_SIM_RESOURCE_PATH to spawn a model. Its gz_bridge
 # builds the path "${PX4_GZ_MODELS}/<model>/model.sdf" and hands that to Gazebo,

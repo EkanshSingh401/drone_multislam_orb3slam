@@ -74,7 +74,12 @@ esac
 
 # _RUN_EXPERIMENT_OUT is set by the snapshot step below, so the re-executed copy
 # reuses the same directory instead of minting a second timestamped one.
-OUT="${_RUN_EXPERIMENT_OUT:-docker/out/experiment_${RIG}_path${PATH_VERSION}_$(date +%Y%m%d-%H%M%S)}"
+# WORLD selects the scene (PATCHES.md s49): "forest" (default, the degraded
+# scene) or "validation" (textured structure 2-6 m from the path). Non-default
+# worlds are part of the experiment directory name so results cannot be mixed.
+WORLD="${WORLD:-forest}"
+if [[ "${WORLD}" == "forest" ]]; then W_TAG=""; else W_TAG="_${WORLD}"; fi
+OUT="${_RUN_EXPERIMENT_OUT:-docker/out/experiment_${RIG}_path${PATH_VERSION}${W_TAG}_$(date +%Y%m%d-%H%M%S)}"
 mkdir -p "${OUT}"
 
 # ---------------------------------------------------------------------------
@@ -146,6 +151,7 @@ fi
     echo "started:        $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "rig:            ${RIG}"
     echo "path_version:   ${PATH_VERSION}"
+    echo "world:          ${WORLD}"
     echo "runs:           ${N}"
     echo "flight:         side=${SIDE}m alt=${ALT}m leg_time=${LEG_TIME}s settle=${SETTLE}s"
     echo "rig_env:        ${RIG_ENV}"
@@ -156,8 +162,8 @@ fi
     echo "git_commit:     $(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "git_dirty:      $(test -n "$(git status --porcelain 2>/dev/null)" && echo yes || echo no)"
     echo "sim_image:      $(docker image inspect drone-sim:jazzy-amd64 --format '{{.Id}}' 2>/dev/null || echo unknown)"
-    echo "world_gravity:  $(${COMPOSE} exec -T sim grep -ohE '<gravity>[^<]*</gravity>' \
-                              /opt/PX4-Autopilot/Tools/simulation/gz/worlds/forest.sdf 2>/dev/null | head -1)"
+    echo "world_gravity:  $(${COMPOSE} exec -T sim bash -c "grep -ohE '<gravity>[^<]*</gravity>' \
+                              /opt/PX4-Autopilot/Tools/simulation/gz/worlds/${WORLD}.sdf /opt/sim_worlds/${WORLD}.sdf 2>/dev/null | head -1")"
 } > "${OUT}/MANIFEST.txt"
 
 echo "=== experiment: rig=${RIG} path=${PATH_VERSION}  ${N} runs  side=${SIDE}m alt=${ALT}m leg=${LEG_TIME}s -> ${OUT} ==="
@@ -185,7 +191,7 @@ for i in $(seq 1 "${N}"); do
     ${COMPOSE} exec -T sim /opt/scripts/bringup_sim.sh --stop 2>&1 | tail -1 \
         | sed "s/^/run ${i}: /" || true
     ${COMPOSE} exec -T sim rm -f /out/logs/bringup.log /out/logs/orb_slam3.log /out/covins/KF_0_ftum.csv
-    ${COMPOSE} exec -d sim bash -c "${RIG_ENV} /opt/scripts/bringup_sim.sh > /out/logs/bringup.log 2>&1; echo EXIT=\$? >> /out/logs/bringup.log"
+    ${COMPOSE} exec -d sim bash -c "${RIG_ENV} WORLD=${WORLD} /opt/scripts/bringup_sim.sh > /out/logs/bringup.log 2>&1; echo EXIT=\$? >> /out/logs/bringup.log"
 
     for _ in $(seq 1 150); do
         ${COMPOSE} exec -T sim grep -qE 'stack up|FAILED|EXIT=' /out/logs/bringup.log 2>/dev/null && break

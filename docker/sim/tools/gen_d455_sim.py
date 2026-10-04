@@ -457,35 +457,37 @@ cam1:
 
 
 
-def _gz_sensor(sensor: str, leaf: str, model: str = None) -> str:
-    return (f"/world/{WORLD_NAME}/model/{model or MODEL_NAME}/link/d455_link"
+def _gz_sensor(sensor: str, leaf: str, model: str = None, world: str = None) -> str:
+    return (f"/world/{world or WORLD_NAME}/model/{model or MODEL_NAME}/link/d455_link"
             f"/sensor/{sensor}/{leaf}")
 
 
-def gen_bridge_yaml(d: dict, with_depth: bool = True) -> str:
+def gen_bridge_yaml(d: dict, with_depth: bool = True, world: str = WORLD_NAME) -> str:
+    # world: the gz world name embedded in every gz topic path. "forest" is the
+    # degraded scene; "validation" is the nearby-structure scene (PATCHES.md s49).
     model = MODEL_NAME if with_depth else MODEL_NAME_NODEPTH
     e = []
 
     def entry(ros, gz, ros_t, gz_t, note=""):
         e.append((ros, gz, ros_t, gz_t, note))
 
-    entry(ROS_TOPICS["infra1_image"], _gz_sensor("infra1", "image", model),
+    entry(ROS_TOPICS["infra1_image"], _gz_sensor("infra1", "image", model, world),
           "sensor_msgs/msg/Image", "gz.msgs.Image",
           "left IR, mono8, %dx%d @ %g Hz" % (IMG_W, IMG_H, IMG_RATE_HZ))
-    entry(ROS_TOPICS["infra1_info"], _gz_sensor("infra1", "camera_info", model),
+    entry(ROS_TOPICS["infra1_info"], _gz_sensor("infra1", "camera_info", model, world),
           "sensor_msgs/msg/CameraInfo", "gz.msgs.CameraInfo", "")
-    entry(ROS_TOPICS["infra2_image"], _gz_sensor("infra2", "image", model),
+    entry(ROS_TOPICS["infra2_image"], _gz_sensor("infra2", "image", model, world),
           "sensor_msgs/msg/Image", "gz.msgs.Image",
           "right IR, mono8, %g mm baseline from infra1" % (STEREO_BASELINE_M * 1000))
-    entry(ROS_TOPICS["infra2_info"], _gz_sensor("infra2", "camera_info", model),
+    entry(ROS_TOPICS["infra2_info"], _gz_sensor("infra2", "camera_info", model, world),
           "sensor_msgs/msg/CameraInfo", "gz.msgs.CameraInfo", "")
     if with_depth:
-        entry(ROS_TOPICS["depth_image"], _gz_sensor("depth", "depth_image", model),
+        entry(ROS_TOPICS["depth_image"], _gz_sensor("depth", "depth_image", model, world),
               "sensor_msgs/msg/Image", "gz.msgs.Image",
               "depth, 32FC1 metres, aligned to infra1")
-        entry(ROS_TOPICS["depth_info"], _gz_sensor("depth", "camera_info", model),
+        entry(ROS_TOPICS["depth_info"], _gz_sensor("depth", "camera_info", model, world),
               "sensor_msgs/msg/CameraInfo", "gz.msgs.CameraInfo", "")
-    entry(ROS_TOPICS["imu"], _gz_sensor("d455_imu", "imu", model),
+    entry(ROS_TOPICS["imu"], _gz_sensor("d455_imu", "imu", model, world),
           "sensor_msgs/msg/Imu", "gz.msgs.IMU",
           "%g Hz, noise model per D455_SIM_CALIBRATION.md" % IMU_RATE_HZ)
 
@@ -504,9 +506,9 @@ def gen_bridge_yaml(d: dict, with_depth: bool = True) -> str:
 # moves the image off its scoped name AND relocates camera_info to /camera_info,
 # where three cameras would collide).
 #
-# NOTE: the gz names embed world "{WORLD_NAME}" and model "{model}".
+# NOTE: the gz names embed world "{world}" and model "{model}".
 # PX4 spawns "<PX4_SIM_MODEL minus gz_>_<instance>", so this matches
-# PX4_SIM_MODEL=gz_x500_d455 with -i 1 in world {WORLD_NAME}.
+# PX4_SIM_MODEL=gz_x500_d455 with -i 1 in world {world}.
 """
     for ros, gz, rt, gt, note in e:
         if note:
@@ -522,7 +524,7 @@ def gen_bridge_yaml(d: dict, with_depth: bool = True) -> str:
     out += f"""
 # Simulation clock -- required because every ROS 2 node runs use_sim_time:=true.
 - ros_topic_name: "/clock"
-  gz_topic_name: "/world/{WORLD_NAME}/clock"
+  gz_topic_name: "/world/{world}/clock"
   ros_type_name: "rosgraph_msgs/msg/Clock"
   gz_type_name: "gz.msgs.Clock"
   direction: GZ_TO_ROS
@@ -531,7 +533,7 @@ def gen_bridge_yaml(d: dict, with_depth: bool = True) -> str:
 # TF tree. ros_gz_bridge drops the entity names in this conversion, so consumers
 # select the model by INDEX (index 0) -- see docker/PATCHES.md section 27.
 - ros_topic_name: "ground_truth/pose_info"
-  gz_topic_name: "/world/{WORLD_NAME}/dynamic_pose/info"
+  gz_topic_name: "/world/{world}/dynamic_pose/info"
   ros_type_name: "tf2_msgs/msg/TFMessage"
   gz_type_name: "gz.msgs.Pose_V"
   direction: GZ_TO_ROS
@@ -899,6 +901,10 @@ FILES = {
     "docker/sim/config_sim_only/gz_bridge_d455.yaml": lambda d: gen_bridge_yaml(d, True),
     "docker/sim/config_sim_only/gz_bridge_d455_nodepth.yaml":
         lambda d: gen_bridge_yaml(d, False),
+    "docker/sim/config_sim_only/gz_bridge_d455_validation.yaml":
+        lambda d: gen_bridge_yaml(d, True, "validation"),
+    "docker/sim/config_sim_only/gz_bridge_d455_nodepth_validation.yaml":
+        lambda d: gen_bridge_yaml(d, False, "validation"),
     "docker/sim/config_sim_only/orbslam3_d455_stereo_inertial.yaml":
         lambda d: gen_orbslam3_stereo_inertial(d),
     "docker/sim/config_sim_only/stereo_inertial_ros_params.yaml":

@@ -102,6 +102,11 @@ evaluate)
             ros2 run ov_eval error_singlerun posyaw ${od}/gt_imu_window.txt ${od}/est_cov_window.txt" \
             > "docker/out/replay/$(basename "${od}")_nees.txt" 2>&1 || true
         grep -iE 'nees|rmse' "docker/out/replay/$(basename "${od}")_nees.txt" | sed 's/\x1b\[[0-9;]*m//g' | head -8
+        # Scene degradation, measured per run (PATCHES.md s49).
+        sim python3 /opt/scripts/ov_scene_stats.py "${od}/openvins.log" \
+            | tee "docker/out/replay/$(basename "${od}")_scene.txt" || true
+        sim python3 /opt/scripts/ov_scene_stats.py "${od}/openvins.log" --json \
+            > "docker/out/replay/$(basename "${od}")_scene.json" 2>/dev/null || true
     done
     ;;
 jointcov)
