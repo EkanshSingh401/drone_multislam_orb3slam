@@ -1979,3 +1979,82 @@ count is ~75.) A likely limiter, not yet verified, is the 5x5 extraction grid
 
 Essentially unchanged, as the flat feature counts predicted. OpenVINS remains at
 metre-level error. Bag 054056 diverges at both thresholds (Sim(3) scale 0.03).
+
+## 49. Validation scene, scene-degradation measurement, and the post-landing failure
+
+*Files: `docker/sim/tools/gen_validation_world.py` (new) -> `docker/sim/worlds/validation.sdf`,
+`docker/sim/models/validation_scene/`; `gen_d455_sim.py` (per-world bridge configs);
+`bringup_sim.sh` / `run_experiment.sh` (`WORLD=`); `ov_scene_stats.py`, `ov_full_metrics.py`,
+`phase3_table.py` (new); open_vins `5b14b93` (DEBUG-level `[FI] [MSCKF] [TRACK] [GRID]` logging,
+estimator output verified byte-identical to `5aa2c83`; builds on Jazzy and Humble).*
+
+### Which check rejects triangulation (forest bag 053636; defaults, none configured)
+
+`fi_min_dist 0.10`, `fi_max_dist 60`, `fi_max_baseline 40`, `fi_max_cond_number 10000`.
+Of 11006 triangulation rejects, **99% trip the condition-number check** (median
+condA 1.1e5): cond only 10250, cond+near 620, near only 114, cond+far 22, NaN 0.
+Median depth of rejected features 8.1 m; of accepted ones 3.75 m. Refine rejects
+are almost all inherited (refine runs after a failed triangulation and gets NaN);
+genuine depth/baseline > 40 rejections: 221.
+
+Features per 5x5 grid cell (cam0 mean, cap 8 per cell): the top row holds 0.8-1.1
+per cell (sky), the lower rows 1.3-6.7. **No cell reaches its cap, so the "sky
+cells" explanation is only partial**: the top row is nearly empty, but grid
+saturation is not what holds the total at ~78.
+
+### Validation scene
+
+Same rig and paths; textured walls and boxes 2-6 m from the path, interior left
+clear for path B; flown at 1.5 m. Physics, gravity (-9.81), magnetic field, sun
+and coordinates as forest. Lighting differs on purpose: with forest's settings
+the enclosure left the first frame nearly black (mean 22/255, 7 FAST corners), so
+shadows are off and textures are emissive (mean 112/255, 1796 FAST corners).
+`WORLD=validation` selects it end to end (generated bridge with
+`/world/validation/...` topics, experiment directories tagged `_validation`,
+world and its gravity recorded in the manifest).
+
+### Result: OpenVINS is accurate in flight; it fails after touchdown
+
+**Airborne segment (init to touchdown), OpenVINS ATE, SE(3), no scale:**
+
+| set | runs | ATE (m) | mean | Sim(3) scale | median depth (all attempts) | tri reject |
+|---|---|---|---|---|---|---|
+| validation A | 5 | 0.030 0.021 0.037 0.029 0.030 | **0.029** | 0.986-1.001 | 3.9-4.5 m | 57-69% |
+| validation B | 5 | 0.071 0.079 0.047 0.058 0.051 | **0.061** | 0.998-1.003 | 4.2-4.4 m | 59-64% |
+| forest A (excl. tuning bag) | 4 | 4.06 0.79 0.11 0.41 | 1.34 (median 0.60) | 0.23-1.00 | 6.0-8.7 m | 72-91% |
+| forest B | 5 | 0.36 0.25 2.57 0.28 152.6 | median 0.36 | 0.002-0.97 | 7.2-8.0 m | 85-94% |
+
+**The pipeline is validated end to end in flight.** Forest degradation is now
+measured, not just observed: deeper features (median 7-9 m vs ~4 m) and more
+triangulation rejections (72-94% vs 57-69%) go with 1-2 orders of magnitude worse
+airborne ATE, and two forest flights diverge in the air.
+
+**Post-landing failure (validation A runs 2, 3, 5 and B runs 1, 3, 4; full
+post-init ATE 2-6 m).** Error stays at 0.01-0.14 m for the whole flight, then
+OpenVINS's velocity climbs (0.8 -> 2.3 m/s) while ground truth is stationary.
+On the ground, tracking is fine (86-87 features/frame), but **SLAM features
+collapse from ~46 to ~0.5 per update and MSCKF to ~0.** With no motion there is
+no parallax, so lost SLAM features cannot be re-initialised (triangulation
+rejects jump to 3200-3500 per 600 frames), and the filter integrates the IMU
+alone. In the bad run inspected, the stationary accelerometer read 9.635 m/s^2
+(good run 9.807), and 0.17 m/s^2 integrated over ~15 s is the observed ~2.5 m/s.
+In the good runs, SLAM features established in flight survive touchdown (49 per
+update) and the estimate stays bounded. OpenVINS's remedy for stationary periods
+is zero-velocity updates; `try_zupt` is **false** in this config. Not changed.
+
+### Evaluation caveats found along the way
+
+- The matched window starts at ORB-SLAM3's VIBA-2 completion and can land late:
+  on the first validation bag it covered 1.9 m of a 17.6 m path, mostly hover
+  and landing. On this rig it also routinely includes the post-landing phase,
+  where OpenVINS fails for the reason above. Window coverage (`win path m`,
+  `win frac`) is now reported next to every window figure.
+- ORB-SLAM3's "converged" window still contains jumps: 102 m on the first
+  validation bag, 14.6 m on validation A run 1, 26.6 m / 2.9 m on forest bags.
+  "After VIBA 2" is not a sufficient definition of converged (noted, not acted on).
+- `ov_eval error_singlerun posyaw` NEES is unreliable here: on a near-stationary
+  window its position-fitted yaw was 4.7 deg off, inflating orientation RMSE to
+  5.3 deg (true error < 1 deg). An independent computation reproduces ov_eval
+  exactly, so it is the alignment, not the tool. NEES is now also computed on
+  the full post-init trajectory, but those values still include the post-landing
+  divergence and are not yet meaningful as a consistency measure.

@@ -102,6 +102,13 @@ evaluate)
             ros2 run ov_eval error_singlerun posyaw ${od}/gt_imu_window.txt ${od}/est_cov_window.txt" \
             > "docker/out/replay/$(basename "${od}")_nees.txt" 2>&1 || true
         grep -iE 'nees|rmse' "docker/out/replay/$(basename "${od}")_nees.txt" | sed 's/\x1b\[[0-9;]*m//g' | head -8
+        # Full post-init OpenVINS metrics, window coverage, and NEES on the full
+        # trajectory (well-conditioned yaw alignment) -- PATCHES.md s49.
+        sim bash -c "source /opt/ros/jazzy/setup.bash; python3 /opt/scripts/ov_full_metrics.py ${od} --t-start ${T}" \
+            > "docker/out/replay/$(basename "${od}")_full.json" 2>/dev/null || true
+        sim bash -c "source /opt/ros/jazzy/setup.bash; source /root/ws_offboard_control/install/setup.bash; \
+            ros2 run ov_eval error_singlerun posyaw ${od}/gt_imu.txt ${od}/est_cov.txt" \
+            > "docker/out/replay/$(basename "${od}")_nees_full.txt" 2>&1 || true
         # Scene degradation, measured per run (PATCHES.md s49).
         sim python3 /opt/scripts/ov_scene_stats.py "${od}/openvins.log" \
             | tee "docker/out/replay/$(basename "${od}")_scene.txt" || true
