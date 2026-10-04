@@ -1536,3 +1536,112 @@ difference across 3.7x the path length.
 
 Stereo-inertial converged (0.088-0.116 m) remains ~3-4x worse than stereo-only
 (~0.030 m) on the same rig.
+---
+
+# Host migration: Apple Silicon Mac -> amd64 Linux with NVIDIA GPU
+
+## 41. Rebuilt for linux/amd64 with GPU rendering for Gazebo
+
+Host: Ubuntu 22.04, Ryzen 9 5950X (16C/32T), 64 GB RAM, GTX 1080 Ti (Pascal,
+compute 6.1). NVIDIA driver 580.178.04, the last driver branch that supports
+Pascal, held with `apt-mark hold`. No CUDA toolkit on the host; any
+CUDA in containers must be **12.x** (CUDA 13 dropped sm_61). Docker 29.4.3,
+nvidia-container-toolkit 1.19.0; Docker's default runtime remains `runc` and
+GPU access is requested per service.
+
+Every earlier patch was re-audited for arm64-specific content:
+
+| Patch | arm64-specific? | Action |
+|---|---|---|
+| §0 SIMD audit | No code was changed | None. `-march=native` now resolves to znver3 (this image is not portable to other CPUs; fine for a single server). |
+| §1 `osrf/ros:melodic-desktop-bionic` -> `ros:melodic-ros-base-bionic` | Motivated by arm64, but the result is multi-arch and works on amd64 | **Kept** so the backend's package set doesn't change between hosts. Reverting would add a second variable to any Mac-vs-Linux comparison. |
+| §14 purge committed x86-64 artefacts | Partly: the `.so` files *are* x86-64 now, but the CMake caches still carry `/home/carlos/...` paths | **Kept**; rebuilding from source is still the only reproducible path. |
+| §15 Pangolin v0.9.1 | No (GCC 13) | Kept. |
+| §19c build parallelism caps | Host-resource limit (16 GB VM) | **Raised**: compose `NR_JOBS` 2->8, `NJOBS` 6->16, sim colcon `MAKEFLAGS` -j1->-j4 (sequential executor kept). Build-only; no effect on binaries' behaviour. |
+| §30 ros1_bridge needs amd64 | Now satisfiable | Not built; still optional and not on the measured path. |
+| compose `platforms: ["linux/arm64"]`, image tags `*-arm64` | Yes | -> `linux/amd64`, `covins-backend:melodic-amd64`, `drone-sim:jazzy-amd64` (also in `scripts/run_experiment.sh`). |
+| `LIBGL_ALWAYS_SOFTWARE=1`, `GALLIUM_DRIVER=llvmpipe` in sim Dockerfile and compose | Yes (no GPU passthrough on macOS) | **Removed** from the sim service. Added `NVIDIA_DRIVER_CAPABILITIES=all` and a compose `deploy.resources.reservations.devices` nvidia entry (`gpu, graphics, compute, utility`). `bringup_sim.sh` already runs `gz sim --headless-rendering`, i.e. EGL, which now resolves to `libEGL_nvidia`. |
+| `LIBGL_ALWAYS_SOFTWARE=1` in covins-backend | Only affects COVINS RViz on Xvfb | Kept; Xvfb cannot use the GPU anyway, and it is off the measured path. |
+
+The edits are on local branch `amd64-gpu`, based on `phase3/openvins-sim`, and
+are rebased onto each fresh pull from the Mac.
+
+## 42. Eigen alignment ABI mismatch on amd64 — ORB-SLAM3 segfault after map init
+
+*File: `docker/sim/Dockerfile` (ORB-SLAM3 Thirdparty build step)*
+
+**Symptom.** The first amd64 stereo-only run died with SIGSEGV (exit -11)
+immediately after `New Map created with 631 points`, so `/robot_pose_slam`
+never appeared and nothing could be evaluated.
+
+**Cause.** The "luck rather than design" note under *Notes that are not
+patches* came true. `ORB_SLAM3/CMakeLists.txt` and `covins_comm` force
+`EIGEN_MAX_ALIGN_BYTES=16`, but `Thirdparty/g2o` and `Thirdparty/DBoW2` compile
+with `-march=native` and **no** override. Measured in the sim image:
+
+    g++ -O3                -> EIGEN_MAX_ALIGN_BYTES 16
+    g++ -O3 -march=native  -> EIGEN_MAX_ALIGN_BYTES 32   (Zen 3, AVX2)
+
+On arm64 both are 16, so the Mac never saw it. On amd64, g2o's vertex/edge
+classes use a different layout from the one `libORB_SLAM3.so` compiles against,
+and the first bundle adjustment after initialisation corrupts memory.
+
+**Fix.** g2o and DBoW2 are configured with
+`-DCMAKE_CXX_FLAGS="-DEIGEN_MAX_ALIGN_BYTES=16 -DEIGEN_MAX_STATIC_ALIGN_BYTES=16"`,
+the same defines ORB-SLAM3 itself uses. `-march=native` is kept. No repo
+source is modified, and every library now agrees on 16, which is what the Mac
+build effectively ran with.
+
+**Alignment alone was not enough.** With the defines fixed, the crash changed
+from SIGSEGV to SIGABRT, `double free or corruption (out)`, at the same point.
+gdb backtrace:
+
+    free()
+    g2o::HyperGraph::clear()                       libg2o.so
+    g2o::OptimizableGraph::~OptimizableGraph()     libg2o.so
+    ORB_SLAM3::Optimizer::PoseOptimization(Frame*) libORB_SLAM3.so
+    ORB_SLAM3::Tracking::TrackReferenceKeyFrame()
+
+The remaining difference was the language standard. `ORB_SLAM3/CMakeLists.txt`
+sets `-std=c++14`; `Thirdparty/g2o` sets none, so GCC 13 compiles it as C++17.
+g2o vertices and edges are allocated in `libORB_SLAM3` (C++14) and deleted
+through virtual destructors in `libg2o` (C++17), and Eigen's
+`EIGEN_MAKE_ALIGNED_OPERATOR_NEW` / aligned-new handling differs between the
+two standards, so allocation and deallocation stop pairing up.
+
+**Verified before baking it in:** libg2o was rebuilt in the running container
+with `-std=c++14` added and the stereo node rerun under gdb on the live rig. It
+initialised the map and tracked at 17-18 fps for 10 minutes with no fault.
+
+**Final fix:** g2o is configured with
+`-DCMAKE_CXX_FLAGS="-DEIGEN_MAX_ALIGN_BYTES=16 -DEIGEN_MAX_STATIC_ALIGN_BYTES=16 -std=c++14"`;
+DBoW2 gets the alignment defines only (it does not exchange Eigen objects with
+ORB-SLAM3). The Mac build had the same C++14/C++17 split, but there it was
+apparently harmless at arm64's 16-byte Eigen default. That is unverified, and
+it is a latent upstream build inconsistency, not an amd64 port bug.
+
+## Results on the amd64 host: stereo-only ORB-SLAM3, path A, D455 rig
+
+Code at `b81e854` plus §41-§42 (no upstream changes at any of the pre-run
+pulls). World gravity is -9.81 (the Mac run used -9.8; irrelevant without an IMU).
+
+| | Mac | amd64, 4 runs |
+|---|---|---|
+| ATE rmse | 0.0302 +/- 0.0033 m (3 runs; an earlier single run gave 0.0138) | 0.030, 0.038, 0.031, 0.037 m (mean ~0.034) |
+| RPE rmse @1 m | 0.0172 m (single run) | 0.034, 0.017, 0.017, 0.019 m |
+| RTF (post-hoc, from bag) | 0.286 | 0.579-0.584 |
+| path | 18.762 m | 18.61-18.83 m |
+| `Tracking LOST` | 0 | 0 |
+
+**Resolved: the two machines agree.** The Mac reran stereo-only three times and
+got **0.0302 +/- 0.0033 m**; its earlier 0.0138 m was a single favourable run.
+The amd64 runs (0.030-0.038 m, mean ~0.034) overlap that distribution. RPE
+agrees in 3 of 4 runs (~0.017-0.019 m vs 0.0172 m). The error is spread evenly
+across the flight (per-window rmse 0.015-0.046 m), with complete association
+(2051 poses, max gap 49 ms).
+
+Note for anyone comparing hosts: sim time does not make ORB-SLAM3
+deterministic, because Local Mapping runs asynchronously in wall-clock time, so
+single runs should not be compared. The amd64 host runs at roughly twice the
+Mac's RTF; that did not produce a measurable ATE difference at n=3-4, and the
+sim is deliberately **not** throttled to match the Mac.

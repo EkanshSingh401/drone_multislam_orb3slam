@@ -3,9 +3,9 @@
 # ROS 2 simulation container: Gazebo Harmonic + PX4 SITL + ORB-SLAM3 (COVINS
 # agent) + orb_slam3_ros2_wrapper + ros_gz_bridge + multi_slam.
 #
-# Built NATIVELY for linux/arm64 (Apple Silicon). Every ROS 2 Jazzy and Gazebo
-# Harmonic package this needs is published for noble/arm64, so nothing here is
-# emulated. See docker/PATCHES.md for the deviations from the upstream repo.
+# Originally built natively for linux/arm64 (Apple Silicon); now built for
+# linux/amd64 with NVIDIA GPU rendering (PATCHES.md §41). Every package is
+# published for both architectures, so nothing here is emulated. See docker/PATCHES.md for the deviations from the upstream repo.
 # =============================================================================
 ARG ROS_DISTRO=jazzy
 FROM ros:${ROS_DISTRO}-ros-base-noble
@@ -227,14 +227,24 @@ RUN cd ${ORB_SLAM3_ROOT_DIR}/Vocabulary && \
 # -----------------------------------------------------------------------------
 # -march=native is left as upstream wrote it: verified to work on arm64 GCC 13
 # in this image (`g++ -O3 -march=native` exits 0, __ARM_ARCH 8 / __ARM_NEON set).
+#
+# amd64 (PATCHES.md §42): on an AVX CPU -march=native raises Eigen's
+# EIGEN_MAX_ALIGN_BYTES from 16 to 32. ORB_SLAM3/CMakeLists.txt and covins_comm
+# force 16, but g2o and DBoW2 do not, so the libraries disagree on the layout
+# of every fixed-size Eigen member and ORB-SLAM3 segfaults in the first BA right
+# after "New Map created". Pass the SAME defines ORB-SLAM3 uses. g2o also gets
+# ORB-SLAM3's -std=c++14 (it sets none, so GCC 13 defaults to C++17); see §42.
+ARG EIGEN_ALIGN_DEFS="-DEIGEN_MAX_ALIGN_BYTES=16 -DEIGEN_MAX_STATIC_ALIGN_BYTES=16"
 RUN cmake -S ${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2 \
           -B ${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2/build \
-          -DCMAKE_BUILD_TYPE=Release && \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_FLAGS="${EIGEN_ALIGN_DEFS}" && \
     cmake --build ${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2/build --parallel ${NJOBS}
 
 RUN cmake -S ${ORB_SLAM3_ROOT_DIR}/Thirdparty/g2o \
           -B ${ORB_SLAM3_ROOT_DIR}/Thirdparty/g2o/build \
-          -DCMAKE_BUILD_TYPE=Release && \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_FLAGS="${EIGEN_ALIGN_DEFS} -std=c++14" && \
     cmake --build ${ORB_SLAM3_ROOT_DIR}/Thirdparty/g2o/build --parallel ${NJOBS}
 
 # -----------------------------------------------------------------------------
@@ -300,8 +310,8 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # translation units pull in ORB-SLAM3 + Eigen + PCL + Sophus templates under
 # C++20 and each cc1plus can exceed 2 GB; anything more parallel than this gets
 # OOM-killed ("c++: fatal error: Killed signal terminated program cc1plus") on a
-# 16 GB Docker VM.
-ENV MAKEFLAGS="-j1"
+# 16 GB Docker VM. Raised to -j4 on the 64 GB amd64 host (PATCHES.md §41).
+ENV MAKEFLAGS="-j4"
 RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     source ${WS}/install/setup.bash && \
     cd ${WS} && \
@@ -489,10 +499,10 @@ RUN set -eux; \
     ! grep -rq '<gravity>0 0 -9.8</gravity>' . \
         || { echo "FATAL: a world still carries -9.8 gravity"; exit 1; }; \
     echo "gravity aligned to ORB-SLAM3 GRAVITY_VALUE=9.81 in all PX4 worlds"
-# No GPU passthrough on macOS Docker: force Mesa software rasterisation for both
-# the Gazebo sensor pipeline (ogre2) and RViz.
-ENV LIBGL_ALWAYS_SOFTWARE=1
-ENV GALLIUM_DRIVER=llvmpipe
+# PATCHES.md §41: the Mac-era LIBGL_ALWAYS_SOFTWARE=1 / GALLIUM_DRIVER=llvmpipe
+# are removed so the Gazebo sensor pipeline (ogre2, --headless-rendering = EGL)
+# renders on the NVIDIA GPU exposed by nvidia-container-toolkit.
+ENV NVIDIA_DRIVER_CAPABILITIES=all
 ENV DISPLAY=:99
 ENV QT_X11_NO_MITSHM=1
 ENV ROS_DOMAIN_ID=55
