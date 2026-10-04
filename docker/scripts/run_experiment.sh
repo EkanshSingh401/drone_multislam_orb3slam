@@ -132,7 +132,7 @@ done
 if [[ ${STALE} -ne 0 ]]; then
     echo
     echo "Rebuild AND recreate:"
-    echo "  docker build --platform linux/arm64 -f docker/sim/Dockerfile -t drone-sim:jazzy-arm64 ."
+    echo "  docker build --platform linux/amd64 -f docker/sim/Dockerfile -t drone-sim:jazzy-amd64 ."
     echo "  docker compose -f docker/compose.yaml up -d --force-recreate sim"
     exit 1
 fi
@@ -155,7 +155,7 @@ fi
     echo "monitor_dur_s:  ${MONITOR_DURATION}"
     echo "git_commit:     $(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "git_dirty:      $(test -n "$(git status --porcelain 2>/dev/null)" && echo yes || echo no)"
-    echo "sim_image:      $(docker image inspect drone-sim:jazzy-arm64 --format '{{.Id}}' 2>/dev/null || echo unknown)"
+    echo "sim_image:      $(docker image inspect drone-sim:jazzy-amd64 --format '{{.Id}}' 2>/dev/null || echo unknown)"
     echo "world_gravity:  $(${COMPOSE} exec -T sim grep -ohE '<gravity>[^<]*</gravity>' \
                               /opt/PX4-Autopilot/Tools/simulation/gz/worlds/forest.sdf 2>/dev/null | head -1)"
 } > "${OUT}/MANIFEST.txt"

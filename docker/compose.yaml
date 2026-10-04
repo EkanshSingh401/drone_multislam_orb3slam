@@ -27,12 +27,13 @@ services:
     build:
       context: ..
       dockerfile: docker/covins/Dockerfile
-      platforms: ["linux/arm64"]
+      platforms: ["linux/amd64"]
       args:
         # See docker/PATCHES.md §19c: these builds are memory-bound, and the two
-        # images must not be built concurrently on a 16 GB VM.
-        NR_JOBS: "2"
-    image: covins-backend:melodic-arm64
+        # images must not be built concurrently on a 16 GB VM. Raised to 8 on the
+        # 64 GB amd64 host (PATCHES.md §40).
+        NR_JOBS: "8"
+    image: covins-backend:melodic-amd64
     container_name: covins-backend
     hostname: covins-backend
     networks: [slamnet]
@@ -75,13 +76,13 @@ services:
     build:
       context: ..
       dockerfile: docker/sim/Dockerfile
-      platforms: ["linux/arm64"]
+      platforms: ["linux/amd64"]
       args:
-        # Applies to PX4 / Pangolin / ORB-SLAM3, which are fine at -j6. The
+        # Applies to PX4 / Pangolin / ORB-SLAM3, which are fine at -j6 (now -j16 on the 64 GB amd64 host, PATCHES.md §40). The
         # colcon step is pinned to -j1 inside the Dockerfile regardless; see
         # docker/PATCHES.md §19c.
-        NJOBS: "6"
-    image: drone-sim:jazzy-arm64
+        NJOBS: "16"
+    image: drone-sim:jazzy-amd64
     container_name: drone-sim
     hostname: sim
     networks: [slamnet]
@@ -98,10 +99,14 @@ services:
       NOVNC_PORT: "6901"
       ROS_DOMAIN_ID: "55"
       RMW_IMPLEMENTATION: "rmw_fastrtps_cpp"
-      # No GPU passthrough on macOS Docker: Gazebo's sensor pipeline and RViz
-      # both render through Mesa llvmpipe.
-      LIBGL_ALWAYS_SOFTWARE: "1"
-      GALLIUM_DRIVER: "llvmpipe"
+      # amd64 host with a GTX 1080 Ti (PATCHES.md §40): Gazebo's sensor
+      # pipeline renders offscreen via EGL on the NVIDIA GPU. The Mac-era
+      # LIBGL_ALWAYS_SOFTWARE / GALLIUM_DRIVER=llvmpipe overrides are removed.
+      # "graphics" makes nvidia-container-toolkit inject libEGL_nvidia and the
+      # glvnd vendor file. RViz on Xvfb still renders in software (Xvfb has no GLX
+      # on the GPU), which does not affect sensor rendering.
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "all"
     volumes:
       - ../covins/covins_comm/config/config_comm.yaml:/opt/covins-config/config_comm.yaml:ro
       - ./out:/out
@@ -115,5 +120,12 @@ services:
     # "leaked process" explanation for a real-time-factor decay.
     init: true
     shm_size: "2gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, graphics, compute, utility]
     stop_grace_period: 10s
     command: ["sleep", "infinity"]
