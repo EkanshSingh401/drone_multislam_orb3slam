@@ -1942,3 +1942,28 @@ uses a fixed value; at 30 it tracks ~30-45 of 200 features here.
 - **Results:** path A on the other four bags (054056, 054533, 055010, 055428).
 - The same rule is to be applied on the real D455, so the counts at every
   threshold are logged below, not just the chosen value.
+
+### fast_threshold sweep (tuning bag 053636, serial runner, all 2191 frames)
+
+Features tracked per frame, from the tracker's last observations (diagnostic build):
+
+```
+fast_threshold  frames  cam0 mean  cam0 median  cam0 p10  cam1 mean
+            30    2191       75.3           82        38       78.5
+            25    2191       75.2           80        39       80.3
+            20    2191       77.4           84        45       81.0
+            15    2191       75.6           80        47       83.0
+            12    2191       76.8           82        45       80.0
+            10    2191       79.3           83        45       83.5
+             8    2191       81.3           83        45       86.6
+             7    2191       80.7           81        46       82.2
+             6    2191       78.1           83        47       86.6
+             5    2191       77.9           82        47       78.9
+```
+
+**No threshold reaches 150; by the rule the value is 5** (applied in
+`gen_d455_sim.py`, nothing else changed). **The premise did not hold:** the
+count is flat at 75-81 from 30 down to 5, so FAST threshold is not what limits
+it. (The ~30-45 estimated by eye from trackhist was also low; the tracker's own
+count is ~75.) A likely limiter, not yet verified, is the 5x5 extraction grid
+(`num_pts` 200, so 8 per cell) with the upper half of every image blank sky.

@@ -839,7 +839,11 @@ filepath_gt: "/out/openvins/ov_groundtruth.txt"
 # ==================================================================
 use_klt: true
 num_pts: 200
-fast_threshold: 30
+# fast_threshold by the pre-registered rule in PATCHES.md s48: highest value in
+# {30,25,20,15,12,10,8,7,6,5} with >= 150 features tracked per frame (cam0 mean)
+# on tuning bag 053636. None reached 150 (cam0 mean 75-81 at every threshold),
+# so by the rule this is 5. The count is threshold-insensitive here.
+fast_threshold: 5
 grid_x: 5
 grid_y: 5
 min_px_dist: 15
