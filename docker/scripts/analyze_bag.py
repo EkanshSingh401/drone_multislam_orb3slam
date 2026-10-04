@@ -39,7 +39,11 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
-    r = rosbag2_py.SequentialReader()
+    # Same reader selection as bag_to_tum.py (file-compressed sensor bags, s45).
+    info = rosbag2_py.Info().read_metadata(args.bag, "")
+    r = (rosbag2_py.SequentialCompressionReader()
+         if (info.compression_mode or "").upper() == "FILE"
+         else rosbag2_py.SequentialReader())
     r.open(rosbag2_py.StorageOptions(uri=args.bag, storage_id=""),
            rosbag2_py.ConverterOptions(input_serialization_format="cdr",
                                        output_serialization_format="cdr"))

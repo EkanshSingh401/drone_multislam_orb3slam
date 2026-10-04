@@ -96,10 +96,28 @@ if [[ "${EST}" == "openvins" ]]; then
     # automatically_declare_parameters_from_overrides(true)
     # (run_subscribe_msckf.cpp:62-65), so -p overrides are picked up by
     # has_parameter() without the launch file declaring them.
+    # The config actually used is copied into the run directory, together with
+    # the two kalibr files it references by RELATIVE path, so every replay keeps
+    # an exact record of its estimator settings. OV_GRAVITY_MAG overrides ONLY
+    # gravity_mag (PATCHES.md s44: the 9.80 vs 9.81 replay comparison); the
+    # edit is asserted so a renamed key fails loudly instead of silently
+    # replaying the default.
+    OV_CFG_DIR="${OUTDIR}/ov_config"
+    mkdir -p "${OV_CFG_DIR}"
+    cp /opt/config_sim_only/openvins_estimator_config.yaml \
+       /opt/config_sim_only/kalibr_imu_chain.yaml \
+       /opt/config_sim_only/kalibr_imucam_chain.yaml "${OV_CFG_DIR}/"
+    if [[ -n "${OV_GRAVITY_MAG:-}" ]]; then
+        sed -i -E "s|^gravity_mag:.*|gravity_mag: ${OV_GRAVITY_MAG}|" \
+            "${OV_CFG_DIR}/openvins_estimator_config.yaml"
+        grep -qx "gravity_mag: ${OV_GRAVITY_MAG}" "${OV_CFG_DIR}/openvins_estimator_config.yaml" \
+            || { echo "replay: failed to set gravity_mag=${OV_GRAVITY_MAG}" >&2; exit 2; }
+    fi
+    log "OpenVINS $(grep -E '^gravity_mag:' "${OV_CFG_DIR}/openvins_estimator_config.yaml")"
     nohup "${WS_OV}/run_subscribe_msckf" --ros-args \
         -r __ns:=/ov_msckf \
         -p use_sim_time:=true \
-        -p config_path:=/opt/config_sim_only/openvins_estimator_config.yaml \
+        -p config_path:="${OV_CFG_DIR}/openvins_estimator_config.yaml" \
         -p verbosity:=DEBUG \
         -p max_cameras:=2 \
         -p use_stereo:=true \
@@ -203,7 +221,7 @@ hr; log "frames processed vs published"
       echo "source=openvins [TIME] tracking lines (VioManager PRINT_DEBUG)"
       # The throttle that would silently drop frames, stated explicitly.
       TF=$(grep -oE "track_frequency:[[:space:]]*[0-9.]+" \
-            /opt/config_sim_only/openvins_estimator_config.yaml | grep -oE "[0-9.]+$")
+            "${OV_CFG_DIR}/openvins_estimator_config.yaml" | grep -oE "[0-9.]+$")
       echo "track_frequency=${TF}"
       echo "min_allowed_gap_s=$(python3 -c "print(f'{1.0/${TF}:.6f}')")"
   else

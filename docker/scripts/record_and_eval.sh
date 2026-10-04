@@ -78,6 +78,33 @@ else
         BAG_EXTRA=(--compression-mode file --compression-format zstd)
         echo "    RECORD_SENSORS=1: also recording stereo IR + IMU (zstd)"
     fi
+    # Disk-space preflight (PATCHES.md s45). A full disk does not stop rosbag2
+    # with an error: it leaves a truncated .mcap.zstd ("file too small") that is
+    # only discovered at evaluation time, after the flight is spent. Five path A
+    # sensor bags were lost exactly that way on a 50 GB root partition. Refuse
+    # to fly unless the output drive has 3x the expected bag size free: 1x for
+    # the uncompressed mcap, 1x for the zstd copy written at close, 1x margin.
+    #
+    # Expected size = data rate x simulated recording length. The rate is
+    # computed from the rig: 2 imagers x 848x480 mono8 x 30 Hz = 24.4 MB per
+    # simulated second; without sensors the bag is pose/tf/clock only, budgeted
+    # at 0.5 MB/s. The length is a deliberately generous per-path budget
+    # (path A measures 65-72 s, path B ~3 min); EXPECTED_SIM_S overrides it.
+    if [[ "${RECORD_SENSORS:-0}" == "1" ]]; then BAG_RATE_B=$((2 * 848 * 480 * 30)); else BAG_RATE_B=500000; fi
+    case "${PATH_VERSION:-A}" in B|b) DEF_SIM_S=300 ;; *) DEF_SIM_S=120 ;; esac
+    EXPECTED_SIM_S="${EXPECTED_SIM_S:-${DEF_SIM_S}}"
+    NEED_B=$(( 3 * BAG_RATE_B * EXPECTED_SIM_S ))
+    FREE_B=$(( $(df --output=avail -B1 "${RUNDIR}" | tail -1) ))
+    awk -v n="${NEED_B}" -v f="${FREE_B}" -v m="$(df --output=target "${RUNDIR}" | tail -1)" \
+        'BEGIN{printf "    disk preflight: need %.1f GB free (3 x %.1f GB expected), have %.1f GB on %s\n", n/1e9, n/3e9, f/1e9, m}'
+    if (( FREE_B < NEED_B )); then
+        echo "record_and_eval: REFUSING TO FLY -- not enough free disk for this bag." >&2
+        echo "  Free space on the drive behind ${OUTROOT}, or set EXPECTED_SIM_S if" >&2
+        echo "  this flight is genuinely shorter than the ${EXPECTED_SIM_S} s budget." >&2
+        echo "DISK_PREFLIGHT_FAILED need=${NEED_B} free=${FREE_B}" > "${RUNDIR}/PREFLIGHT_FAILED.txt"
+        exit 5
+    fi
+
     ros2 bag record -s mcap -o "${RUNDIR}/flight.bag" \
         "${BAG_EXTRA[@]}" \
         "${EST_TOPIC}" \

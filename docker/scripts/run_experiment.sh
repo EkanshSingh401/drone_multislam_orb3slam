@@ -205,9 +205,17 @@ for i in $(seq 1 "${N}"); do
     ${COMPOSE} exec -T sim env SIDE="${SIDE}" ALT="${ALT}" LEG_TIME="${LEG_TIME}" \
         SETTLE="${SETTLE}" PATH_VERSION="${PATH_VERSION}" \
         MONITOR_DURATION="${MONITOR_DURATION}" \
-        RECORD_SENSORS="${RECORD_SENSORS:-0}" ${EVAL_ENV} \
+        RECORD_SENSORS="${RECORD_SENSORS:-0}" EXPECTED_SIM_S="${EXPECTED_SIM_S:-}" ${EVAL_ENV} \
         /opt/scripts/record_and_eval.sh \
-        > "${OUT}/run${i}_flight.log" 2>&1 || echo "run ${i}: record_and_eval returned $?"
+        > "${OUT}/run${i}_flight.log" 2>&1 && RAE_RC=0 || RAE_RC=$?
+    if [[ ${RAE_RC} -eq 5 ]]; then
+        # Disk preflight refused to fly (PATCHES.md s45). Every later run would
+        # hit the same wall, so stop the whole experiment here, loudly.
+        echo "run ${i}: ABORTING EXPERIMENT -- disk preflight refused to fly:" >&2
+        grep -E "disk preflight|REFUSING" "${OUT}/run${i}_flight.log" >&2 || true
+        exit 5
+    fi
+    [[ ${RAE_RC} -eq 0 ]] || echo "run ${i}: record_and_eval returned ${RAE_RC}"
 
     RUNDIR=$(grep -oE '/out/eval/[0-9-]+' "${OUT}/run${i}_flight.log" | head -1)
     if [[ -z "${RUNDIR}" ]]; then

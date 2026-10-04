@@ -23,8 +23,24 @@ from rosidl_runtime_py.utilities import get_message
 import rosbag2_py
 
 
+def make_reader(path: str):
+    """A reader that can open this bag (PATCHES.md s45).
+
+    RECORD_SENSORS=1 bags are written with FILE-level zstd compression, and the
+    plain SequentialReader cannot open those: it reads the zstd frame header
+    where the MCAP magic should be ("invalid magic bytes in Header:
+    0x28B52FFD..."). The compression mode is read from metadata.yaml and the
+    matching reader chosen. Note that SequentialCompressionReader decompresses
+    to an uncompressed .mcap beside the .zstd and leaves it there.
+    """
+    info = rosbag2_py.Info().read_metadata(path, "")
+    if (info.compression_mode or "").upper() == "FILE":
+        return rosbag2_py.SequentialCompressionReader()
+    return rosbag2_py.SequentialReader()
+
+
 def open_reader(path: str) -> tuple[rosbag2_py.SequentialReader, dict[str, str]]:
-    reader = rosbag2_py.SequentialReader()
+    reader = make_reader(path)
     # storage_id="" lets rosbag2 sniff mcap vs sqlite3 from the bag itself.
     reader.open(
         rosbag2_py.StorageOptions(uri=path, storage_id=""),
