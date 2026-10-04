@@ -1967,3 +1967,15 @@ count is flat at 75-81 from 30 down to 5, so FAST threshold is not what limits
 it. (The ~30-45 estimated by eye from trackhist was also low; the tracker's own
 count is ~75.) A likely limiter, not yet verified, is the 5x5 extraction grid
 (`num_pts` 200, so 8 per cell) with the upper half of every image blank sky.
+
+**Path A with fast_threshold 5, the four non-tuning bags** (window-matched, g 9.81):
+
+| bag | OV ATE thr 30 | **OV ATE thr 5** | OV RPE thr 5 | OV max step thr 5 | ORB conv ATE |
+|---|---|---|---|---|---|
+| 054056 | 26.52 | **27.21** | 1.068 | 0.22 | 1.146 |
+| 054533 | 0.931 | **0.881** | 0.759 | 1.27 | 0.027 |
+| 055010 | 1.840 | **1.381** | 0.564 | 0.39 | 37.92 |
+| 055428 | 4.805 | **4.610** | 0.895 | 0.56 | 0.408 |
+
+Essentially unchanged, as the flat feature counts predicted. OpenVINS remains at
+metre-level error. Bag 054056 diverges at both thresholds (Sim(3) scale 0.03).
