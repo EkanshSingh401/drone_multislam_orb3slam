@@ -1329,3 +1329,59 @@ Separately, the staleness guard did exactly its job in the same experiment. The
 three stereo-only runs refused to start because `record_and_eval.sh` had been
 edited (`STALE record_and_eval.sh`), rather than running with host and container
 scripts disagreeing. A non-zero exit there is a correct refusal, not a failure.
+
+## 38. A 25x real-time-factor collapse, and why the run that hit it is unrecoverable
+
+The first attempt at the three stereo-only runs produced a flight that took **26
+minutes of wall time for ~80 s of simulated time**: `rates.log` recorded
+**RTF 0.011** against the 0.279 +/- 0.005 measured across the five
+stereo-inertial runs on the same image.
+
+Observations while it was happening:
+
+- `gz sim` pinned at **543-675% CPU** (~5.7 of the Docker VM's 18 CPUs) with 87
+  threads, while producing almost no simulated time -- working hard and
+  achieving nothing, not stalled.
+- host load average 7.1-7.9 sustained.
+- Gazebo's own `real_time_factor` field read **0.042 and then 0.957** on
+  consecutive samples, which is the bimodality documented earlier and the reason
+  the `/clock`-derived figure is the one to trust.
+
+**It was not structural.** A clean stack on the same image measures
+**RTF 0.2199** (3852 clock messages, 15.40 s sim over 70.1 s wall), so nothing
+in the OpenVINS additions or the gravity change broke the simulator.
+
+**No confident root cause.** The most likely explanation is contention of my own
+making: the experiment was launched shortly after `colcon test`, the
+`active_slam_information` gtest binary, two OpenVINS boot tests and a 45 s
+stereo-sync measurement had run in the same container, and it was then probed
+repeatedly with `docker stats`, `ps` and `gz topic` *while run 1 was flying*.
+That is a hypothesis, not a finding. What is established is that the condition
+did not persist.
+
+Diagnosis was made worse by a cleanup command using `timeout`, which does not
+exist on macOS: the command failed, `gz sim` kept running at full tilt for
+several more minutes, and the measurements taken during that window were
+contaminated.
+
+### The defect worth fixing: the monitor is shorter than a slow flight
+
+`rate_monitor.py`'s duration defaulted to 900 s via
+`MONITOR_DURATION:-900` in `record_and_eval.sh`. At RTF 0.011 the flight ran 26
+minutes, so the monitor hit its limit **mid-flight**, printed its RUN SUMMARY
+and exited. The run then completed normally and its RTF was **unrecoverable** --
+the single number that would have characterised what went wrong.
+
+`run_experiment.sh` now passes `MONITOR_DURATION=2400` and records it in
+`MANIFEST.txt`. It is set there rather than in `record_and_eval.sh` so it does
+not invalidate the container's baked scripts and force an image rebuild.
+
+### Standing rule this produced
+
+Per-run RTF is now treated as an **acceptance criterion, not just a reported
+number**. A run whose RTF falls outside the established band for its rig is
+discarded rather than averaged in: at 0.011 the simulator is not delivering the
+sensor timing the estimator is being evaluated on, and its ATE is not comparable
+with runs that were. This is the same discipline applied to the recorder-overrun
+run of s33, for the same reason -- a number produced under different conditions
+is not a measurement of the same thing.

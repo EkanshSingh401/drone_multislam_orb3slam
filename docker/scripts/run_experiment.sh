@@ -25,6 +25,13 @@ RIG="${RIG:-depth}"
 # Path A leaves accelerometer bias and inertial scale weakly observable, which
 # is why B exists. See docker/OPEN_ISSUES.md s2.
 PATH_VERSION="${PATH_VERSION:-A}"
+# rate_monitor's own default is 900 s, which is SHORTER than a slow flight. When
+# the real-time factor dropped to 0.011 one flight took 26 minutes of wall time,
+# the monitor hit its 900 s limit mid-flight, wrote its summary and exited -- so
+# the run completed but its RTF was unrecoverable, which is the one number that
+# would have explained what went wrong. Passed through as an env override so this
+# does not require touching record_and_eval.sh (and therefore an image rebuild).
+MONITOR_DURATION="${MONITOR_DURATION:-2400}"
 
 case "${RIG}" in
   depth)
@@ -145,6 +152,7 @@ fi
     echo "eval_env:       ${EVAL_ENV}"
     echo "use_covins:     ${USE_COVINS}"
     echo "record_sensors: ${RECORD_SENSORS:-0}"
+    echo "monitor_dur_s:  ${MONITOR_DURATION}"
     echo "git_commit:     $(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "git_dirty:      $(test -n "$(git status --porcelain 2>/dev/null)" && echo yes || echo no)"
     echo "sim_image:      $(docker image inspect drone-sim:jazzy-arm64 --format '{{.Id}}' 2>/dev/null || echo unknown)"
@@ -196,6 +204,7 @@ for i in $(seq 1 "${N}"); do
 
     ${COMPOSE} exec -T sim env SIDE="${SIDE}" ALT="${ALT}" LEG_TIME="${LEG_TIME}" \
         SETTLE="${SETTLE}" PATH_VERSION="${PATH_VERSION}" \
+        MONITOR_DURATION="${MONITOR_DURATION}" \
         RECORD_SENSORS="${RECORD_SENSORS:-0}" ${EVAL_ENV} \
         /opt/scripts/record_and_eval.sh \
         > "${OUT}/run${i}_flight.log" 2>&1 || echo "run ${i}: record_and_eval returned $?"
