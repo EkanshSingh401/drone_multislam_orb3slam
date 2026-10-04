@@ -62,12 +62,66 @@ case "${EST}" in
   stereo_inertial) EST_TOPIC="/robot_pose_slam"; LAUNCH="stereo_inertial.launch.py" ;;
   stereo)          EST_TOPIC="/robot_pose_slam"; LAUNCH="stereo_d455.launch.py" ;;
   openvins)        EST_TOPIC="/ov_msckf/poseimu";  LAUNCH="" ;;
-  *) echo "estimator must be stereo_inertial, stereo or openvins" >&2; exit 2 ;;
+  openvins_serial) EST_TOPIC="";                  LAUNCH="" ;;
+  *) echo "estimator must be stereo_inertial, stereo, openvins or openvins_serial" >&2; exit 2 ;;
 esac
 
 # ---------------------------------------------------------------------------
 # 2. Start the estimator and wait for it to be ready.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# openvins_serial: deterministic offline run (PATCHES.md s47).
+# ---------------------------------------------------------------------------
+# ros2_serial_msckf reads the bag DIRECTLY and feeds IMU and stereo pairs to
+# the same ROS2Visualizer callbacks as the live node, in recorded order, on one
+# thread. No playback, no DDS, no wall-clock dependence: two runs on one bag are
+# bit-identical, which replay through run_subscribe_msckf is not (s46). Same
+# config copy, gravity override and frame accounting as the topic path.
+if [[ "${EST}" == "openvins_serial" ]]; then
+    OV_CFG_DIR="${OUTDIR}/ov_config"
+    mkdir -p "${OV_CFG_DIR}"
+    cp /opt/config_sim_only/openvins_estimator_config.yaml \
+       /opt/config_sim_only/kalibr_imu_chain.yaml \
+       /opt/config_sim_only/kalibr_imucam_chain.yaml "${OV_CFG_DIR}/"
+    if [[ -n "${OV_GRAVITY_MAG:-}" ]]; then
+        sed -i -E "s|^gravity_mag:.*|gravity_mag: ${OV_GRAVITY_MAG}|" \
+            "${OV_CFG_DIR}/openvins_estimator_config.yaml"
+        grep -qx "gravity_mag: ${OV_GRAVITY_MAG}" "${OV_CFG_DIR}/openvins_estimator_config.yaml" \
+            || { echo "replay: failed to set gravity_mag=${OV_GRAVITY_MAG}" >&2; exit 2; }
+    fi
+    hr; log "OpenVINS SERIAL $(grep -E '^gravity_mag:' "${OV_CFG_DIR}/openvins_estimator_config.yaml")"
+    # DEBUG for the per-frame "[TIME] ... seconds for tracking" lines, which are
+    # how frames processed is counted (same as the topic path).
+    "${WS_OV}/ros2_serial_msckf" --ros-args \
+        -r __ns:=/ov_msckf \
+        -p config_path:="${OV_CFG_DIR}/openvins_estimator_config.yaml" \
+        -p path_bag:="${BAG}" \
+        -p verbosity:=DEBUG \
+        -p save_total_state:=true \
+        -p filepath_est:="${OUTDIR}/ov_state_est.txt" \
+        -p filepath_std:="${OUTDIR}/ov_state_std.txt" \
+        -p filepath_gt:="${OUTDIR}/ov_state_gt.txt" \
+        > "${OUTDIR}/openvins.log" 2>&1 \
+        || { tail -30 "${OUTDIR}/openvins.log"; echo "replay: ros2_serial_msckf failed" >&2; exit 4; }
+    if grep -q "NOT compiled in" "${OUTDIR}/openvins.log"; then
+        echo "  JOINT_COV_MISSING" > "${OUTDIR}/WARNINGS.txt"
+    fi
+    sed 's/\x1b\[[0-9;]*m//g' "${OUTDIR}/openvins.log" | grep -E "\[SERIAL\]: done" | tee "${OUTDIR}/serial_summary.txt"
+    hr; log "frames processed vs published"
+    {
+      echo "published_infra1=${PUB_L}"
+      echo "published_infra2=${PUB_R}"
+      echo "published_imu=${PUB_IMU}"
+      echo "processed_frames=$(grep -c "seconds for tracking" "${OUTDIR}/openvins.log" || true)"
+      echo "source=openvins [TIME] tracking lines (VioManager PRINT_DEBUG), serial runner"
+      TF=$(grep -oE "track_frequency:[[:space:]]*[0-9.]+" \
+            "${OV_CFG_DIR}/openvins_estimator_config.yaml" | grep -oE "[0-9.]+$")
+      echo "track_frequency=${TF}"
+    } | tee "${OUTDIR}/frames.txt"
+    hr; log "replay output in ${OUTDIR}"
+    exit 0
+fi
+
 hr; log "starting estimator: ${EST}"
 if [[ "${EST}" == "openvins" ]]; then
     # DEBUG verbosity on purpose: the only per-frame signal OpenVINS emits is

@@ -11,7 +11,9 @@ Inputs (written by replay_estimator.sh --estimator openvins):
                      (PATCHES.md s46).
     ov_est_cov.txt   /odomimu with full 6x6 covariance (ov_pose_to_file.py), used only
                      for the NEES cross-check
-    out.bag          the replay's recording, carrying /ground_truth/pose_info + /clock
+    out.bag          the replay's recording, carrying /ground_truth/pose_info + /clock;
+                     --gt-bag points elsewhere (the serial runner has no out.bag, so
+                     ground truth is read from the input flight.bag itself)
 
 Outputs:
     gt.tum                  ground truth, base_link frame (same extraction as record_and_eval.sh)
@@ -79,6 +81,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("rundir")
     ap.add_argument("--t-start", type=float, default=None)
+    ap.add_argument("--gt-bag", default=None,
+                    help="bag to take ground truth from (default: <rundir>/out.bag)")
     a = ap.parse_args()
     d = a.rundir
 
@@ -91,7 +95,7 @@ def main() -> int:
 
     gt_tum = os.path.join(d, "gt.tum")
     subprocess.run(
-        ["python3", "/opt/scripts/bag_to_tum.py", os.path.join(d, "out.bag"),
+        ["python3", "/opt/scripts/bag_to_tum.py", a.gt_bag or os.path.join(d, "out.bag"),
          "--tf-topic", "/ground_truth/pose_info", "--tf-index", "0",
          "--time-from-clock", "/clock", "--out", gt_tum],
         check=True)

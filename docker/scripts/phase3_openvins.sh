@@ -5,13 +5,20 @@
 #   ./docker/scripts/phase3_openvins.sh replay      <experiment_dir> [gravity_mag]
 #   ./docker/scripts/phase3_openvins.sh evaluate    <experiment_dir> [gravity_mag]
 #   ./docker/scripts/phase3_openvins.sh jointcov    <experiment_dir>
+#   ./docker/scripts/phase3_openvins.sh topicspread <experiment_dir> [n=3]
+#
+# Every mode except topicspread uses ros2_serial_msckf (estimator
+# openvins_serial), the deterministic bag-reading runner (PATCHES.md s47).
+# topicspread replays ONE bag n times through the live topic node
+# (run_subscribe_msckf) to measure the run-to-run spread to expect on hardware.
 #
 # <experiment_dir> is a run_experiment.sh output recorded with RECORD_SENSORS=1
 # and RIG=d455, e.g. docker/out/experiment_d455_pathA_<stamp>. Its rundirs.txt
 # names the live runs; each live run's flight.bag is the replay input and its
 # orb_slam3.log (live stereo-inertial, same data) supplies the converged window.
 #
-# Replay outputs go to /out/replay/<run>_openvins_g<gravity>[_<tag>]/.
+# Outputs go to /out/replay/<run>_ovser_g<gravity>[_<tag>]/ (serial runner) or
+# /out/replay/<run>_ovtopic_g<gravity>_<tag>/ (topic replay).
 #
 # determinism  replays the FIRST bag twice at the default gravity and requires
 #              the OpenVINS outputs to be byte-identical. Nothing else in phase 3
@@ -31,18 +38,19 @@ mapfile -t RUNS < <(grep -oE '/out/eval/[0-9-]+' "${EXP}/rundirs.txt")
 (( ${#RUNS[@]} > 0 )) || { echo "no runs listed in ${EXP}/rundirs.txt" >&2; exit 2; }
 sim() { ${COMPOSE} exec -T sim "$@"; }
 
-replay_one() {  # replay_one <rundir> <gravity> <outdir>
-    local rd="$1" g="$2" od="$3"
+replay_one() {  # replay_one <rundir> <gravity> <outdir> [estimator]
+    local rd="$1" g="$2" od="$3" est="${4:-openvins_serial}"
     sim bash -c "test -f ${rd}/flight.bag/metadata.yaml" \
         || { echo "  ${rd}: no complete flight.bag, skipping"; return 1; }
     sim bash -c "rm -rf ${od}"
     sim env OV_GRAVITY_MAG="${g}" /opt/scripts/replay_estimator.sh \
-        --bag "${rd}/flight.bag" --estimator openvins --out "${od}" \
+        --bag "${rd}/flight.bag" --estimator "${est}" --out "${od}" \
         > "docker/out/replay/$(basename "${od}").log" 2>&1
-    sim cat "${od}/frames.txt" | tr '\n' ' '; echo
+    sim cat "${od}/frames.txt" | grep -E 'published_infra1|processed' | tr '\n' ' '; echo
 }
 
-outdir() { echo "/out/replay/$(basename "$1")_openvins_g${2}${3:+_$3}"; }
+outdir()  { echo "/out/replay/$(basename "$1")_ovser_g${2}${3:+_$3}"; }
+outdirT() { echo "/out/replay/$(basename "$1")_ovtopic_g${2}_$3"; }
 mkdir -p docker/out/replay
 
 case "${MODE}" in
@@ -55,12 +63,8 @@ determinism)
     a="$(outdir "${rd}" "${G}" det1)"; b="$(outdir "${rd}" "${G}" det2)"
     echo "== comparing OpenVINS outputs byte for byte"
     ok=1
-    # PASS/FAIL is decided on OpenVINS's own per-update state (save_total_state),
-    # which is what phase 3 evaluates. The published /odomimu stream
-    # (ov_est_cov.txt) is propagated at IMU rate from whatever state exists when
-    # each IMU message is handled, so it depends on callback interleaving and is
-    # NOT expected to be bit-identical (PATCHES.md s46); it is reported below for
-    # information only.
+    # PASS/FAIL on OpenVINS's own per-update state (save_total_state), which is
+    # what phase 3 evaluates, plus the frame accounting.
     for f in ov_state_est.txt ov_state_std.txt; do
         if sim cmp -s "${a}/${f}" "${b}/${f}"; then
             echo "  IDENTICAL  ${f}  ($(sim bash -c "wc -l < ${a}/${f}") lines)"
@@ -69,17 +73,9 @@ determinism)
             sim bash -c "diff <(cut -d' ' -f1-8 ${a}/${f}) <(cut -d' ' -f1-8 ${b}/${f}) | head -6" || true
         fi
     done
-    for f in frames.txt; do
+    for f in frames.txt serial_summary.txt; do
         sim bash -c "diff ${a}/${f} ${b}/${f}" && echo "  IDENTICAL  ${f}" || { echo "  DIFFERENT  ${f}"; ok=0; }
     done
-    echo "  (info) /odomimu stream, not part of the criterion:"
-    sim python3 -c "
-import numpy as np
-L=lambda p:{l.split()[0]:np.array(l.split()[1:],float) for l in open(p) if not l.startswith('#')}
-A,B=L('${a}/ov_est_cov.txt'),L('${b}/ov_est_cov.txt'); c=set(A)&set(B)
-d=[np.linalg.norm(A[k][:3]-B[k][:3]) for k in c if not np.array_equal(A[k],B[k])]
-print('    %d of %d common rows differ; max position diff %.3g m' % (len(d), len(c), max(d) if d else 0))
-"
     (( ok )) && echo "DETERMINISM: PASS (estimator state bit-identical)" || { echo "DETERMINISM: FAIL"; exit 1; }
     ;;
 replay)
@@ -98,7 +94,7 @@ evaluate)
             continue
         fi
         echo "== $(basename "${rd}") g=${G}  window t >= ${T}"
-        sim python3 /opt/scripts/ov_prep.py "${od}" --t-start "${T}"
+        sim python3 /opt/scripts/ov_prep.py "${od}" --t-start "${T}" --gt-bag "${rd}/flight.bag"
         sim /opt/scripts/eval_window_matched.sh --orb "${rd}" --ov "${od}" | tee "docker/out/replay/$(basename "${od}")_matched.txt"
         sim bash -c "source /opt/ros/jazzy/setup.bash; source /root/ws_offboard_control/install/setup.bash; \
             ros2 run ov_eval error_singlerun posyaw ${od}/gt_imu_window.txt ${od}/est_cov_window.txt" \
@@ -108,20 +104,28 @@ evaluate)
     ;;
 jointcov)
     rd="${RUNS[0]}"; od="$(outdir "${rd}" 9.81 jointcov)"
-    echo "== joint covariance replay: $(basename "${rd}")"
+    echo "== joint covariance: serial run on $(basename "${rd}"), sampled early / mid / late"
     sim bash -c "rm -rf ${od}"
-    sim /opt/scripts/replay_estimator.sh --bag "${rd}/flight.bag" --estimator openvins --out "${od}" \
+    sim /opt/scripts/replay_estimator.sh --bag "${rd}/flight.bag" --estimator openvins_serial --out "${od}" \
         > "docker/out/replay/$(basename "${od}").log" 2>&1 &
     RP=$!
-    # sample early, mid and late in the flight
-    for wait_s in 40 40 40; do
+    J="docker/out/replay/$(basename "${od}")_jointcov.jsonl"; : > "${J}"
+    # The serial runner covers a path A bag in ~23 s wall (init at ~4 s), so
+    # these offsets land early, mid and late in the flight.
+    for wait_s in 8 6 6; do
         sleep "${wait_s}"
         sim bash -c "source /opt/ros/jazzy/setup.bash; source /root/ws_offboard_control/install/setup.bash; \
-            timeout 60 python3 /opt/scripts/check_joint_cov.py --messages 3 --json" \
-            >> "docker/out/replay/$(basename "${od}")_jointcov.jsonl" 2>&1 || true
+            timeout 20 python3 /opt/scripts/check_joint_cov.py --messages 2 --json" >> "${J}" 2>&1 || true
     done
     wait "${RP}" || true
-    echo "results in docker/out/replay/$(basename "${od}")_jointcov.jsonl"
+    echo "results in ${J}"
     ;;
-*) echo "mode must be determinism|replay|evaluate|jointcov" >&2; exit 2 ;;
+topicspread)
+    rd="${RUNS[0]}"; n="${G:-3}"; [[ "${n}" =~ ^[0-9]+$ ]] || n=3
+    echo "== topic-replay spread: $(basename "${rd}") x ${n} through run_subscribe_msckf"
+    for k in $(seq 1 "${n}"); do
+        replay_one "${rd}" 9.81 "$(outdirT "${rd}" 9.81 "r${k}")" openvins
+    done
+    ;;
+*) echo "mode must be determinism|replay|evaluate|jointcov|topicspread" >&2; exit 2 ;;
 esac

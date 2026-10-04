@@ -334,7 +334,9 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # Jazzy removed, so one source tree builds on both Jazzy and Humble. The fix
 # lives in the fork, NOT as a sed here, so the repo stays the single source of
 # truth for what actually runs.
-ARG OPEN_VINS_COMMIT=06242b2acaf027fac65d0b3d530fab50bbc6fa2c
+# 5aa2c83 adds ros2_serial_msckf, the deterministic bag-reading runner used for
+# all phase-3 evaluation (PATCHES.md s47); run_subscribe_msckf is unchanged.
+ARG OPEN_VINS_COMMIT=5aa2c83249dd1edf47f2bf961ebf863eeee0649d
 ARG ACTIVE_SLAM_MSGS_COMMIT=a0790aafdb8dffa0eb33a0e7f471071d1edb9426
 ARG ACTIVE_SLAM_PLANNER_COMMIT=f56e1146256f009bc71a3b4c644afc8c7f2dcd14
 ARG ACTIVE_SLAM_INFORMATION_COMMIT=e2250686130f0d92adfb2bd126735638dddaf424
@@ -393,6 +395,8 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     test $rc -eq 0 || { echo "FATAL: colcon build exited ${rc}"; exit $rc; }; \
     test -x ${WS}/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf \
         || { echo "FATAL: run_subscribe_msckf not built"; exit 1; }; \
+    test -x ${WS}/install/ov_msckf/lib/ov_msckf/ros2_serial_msckf \
+        || { echo "FATAL: ros2_serial_msckf not built (rosbag2 not found at configure?)"; exit 1; }; \
     test -x ${WS}/install/ov_eval/lib/ov_eval/error_singlerun \
         || { echo "FATAL: ov_eval error_singlerun not built (needed for NEES)"; exit 1; }
 
