@@ -87,14 +87,16 @@ replay)
 evaluate)
     for rd in "${RUNS[@]}"; do
         od="$(outdir "${rd}" "${G}")"
-        sim bash -c "test -s ${od}/ov_est_cov.txt" || { echo "== $(basename "${rd}"): no replay at g=${G}"; continue; }
+        sim bash -c "test -s ${od}/ov_state_est.txt" || { echo "== $(basename "${rd}"): no replay at g=${G}"; continue; }
         T=$(sim python3 /opt/scripts/viba_window.py "${rd}/orb_slam3.log" --emit-t-start || true)
         if [[ -z "${T}" ]]; then
             echo "== $(basename "${rd}"): no VIBA 2 in the live ORB-SLAM3 log; no window to impose, skipping"
             continue
         fi
         echo "== $(basename "${rd}") g=${G}  window t >= ${T}"
-        sim python3 /opt/scripts/ov_prep.py "${od}" --t-start "${T}" --gt-bag "${rd}/flight.bag"
+        sim bash -c "source /opt/ros/jazzy/setup.bash; \
+            python3 /opt/scripts/ov_prep.py ${od} --t-start ${T} --gt-bag ${rd}/flight.bag" \
+            || { echo "  ov_prep failed for $(basename "${od}"), skipping"; continue; }
         sim /opt/scripts/eval_window_matched.sh --orb "${rd}" --ov "${od}" | tee "docker/out/replay/$(basename "${od}")_matched.txt"
         sim bash -c "source /opt/ros/jazzy/setup.bash; source /root/ws_offboard_control/install/setup.bash; \
             ros2 run ov_eval error_singlerun posyaw ${od}/gt_imu_window.txt ${od}/est_cov_window.txt" \

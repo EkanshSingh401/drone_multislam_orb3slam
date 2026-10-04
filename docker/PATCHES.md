@@ -1784,11 +1784,15 @@ Same bag, replayed twice through `run_subscribe_msckf`:
   initialisation** (~1e-4 m), growing to 0.0276 m max later in the flight. Pair
   1's match was luck.
 
-**Cause.** With the default `multi_threading_subs: false`, a queued image is
-processed inside the first IMU callback stamped after it
-(`ROS2Visualizer::callback_inertial`). Whether the image has arrived by then, and
-how many newer IMU samples are already buffered, depends on DDS delivery timing
-during playback, not on the bag. The very first state already differing is
+**Cause.** `run_subscribe_msckf` hard-codes `params.use_multi_threading_subs =
+true` (overriding the YAML) and spins a `MultiThreadedExecutor`. A queued image
+is processed on a detached thread launched from the first IMU callback stamped
+after it (`ROS2Visualizer::callback_inertial`). Whether the image has arrived by
+then, how many newer IMU samples are already buffered, and how the processing
+thread interleaves with incoming callbacks all depend on DDS delivery and
+scheduling during playback, not on the bag. (An earlier draft of this section
+said subscriptions were single-threaded by default; the YAML default is, but
+the live node overrides it.) The very first state already differing is
 consistent with the static initialiser anchoring its window to the newest
 buffered IMU sample. `/odomimu` is also propagated from whatever state exists
 at each IMU callback, which is why it differs more.
@@ -1804,3 +1808,72 @@ to the open_vins fork and a pin bump.**
 than `/odomimu` (diagonal covariance from `ov_state_std.txt`, with the
 full-covariance `/odomimu` rows at update stamps kept as a NEES cross-check), so
 it will work unchanged on serial-runner output.
+
+## 47. Deterministic OpenVINS evaluation (ros2_serial_msckf) and path A results
+
+*open_vins fork `5aa2c83` (pinned in `docker/sim/Dockerfile`), `docker/scripts/replay_estimator.sh`
+(estimator `openvins_serial`), `docker/scripts/phase3_openvins.sh`, `docker/scripts/ov_prep.py`*
+
+**Serial runner.** `ros2_serial_msckf` (new in the fork, beside the unchanged
+live `run_subscribe_msckf`) reads the bag directly and drives the live node's
+own `ROS2Visualizer` callbacks in recorded order on one thread, with
+`use_multi_threading_subs/pubs` off and `num_opencv_threads 0`. It builds on
+Jazzy (here) and Humble (verified in a `ros:humble-ros-base` container, with
+`active_slam_msgs` and the joint-covariance publisher enabled).
+**Determinism: PASS.** Two runs on one path A bag gave byte-identical
+`ov_state_est.txt` / `ov_state_std.txt` (1896 rows), frame counts and summaries.
+Each run takes ~23 s of wall time for a 72 s flight.
+
+**Topic-replay spread (one-off, live node, 3 replays of the same bag):** all
+three were bit-identical to each other and to the serial run. Together with the
+§46 pair that diverged (up to 2.8 cm), the live node's run-to-run variation is
+intermittent: usually zero, occasionally centimetres.
+
+### Path A, OpenVINS vs ORB-SLAM3 stereo-inertial, window-matched (5 bags)
+
+Window = each bag's live ORB-SLAM3 VIBA-2 completion to the end; same window,
+SE(3) alignment, no scale, 0.05 s association for both estimators. OpenVINS is
+scored base-to-base (§44).
+
+| bag | ORB conv ATE | ORB max step (window / all) | OV ATE g9.81 | OV ATE g9.80 | OV RPE | OV max step | frames proc/pub |
+|---|---|---|---|---|---|---|---|
+| 053636 | 0.052 | 0.089 / 1.38 | 0.761 | 0.764 | 0.643 | 0.42 | 2187/2191 |
+| 054056 | 1.146 | 26.6 / 26.6 | 26.52 | 26.48 | 1.060 | 0.21 | 2170/2175 |
+| 054533 | 0.027 | 0.070 / 59.2 | 0.931 | 0.906 | 0.709 | 1.48 | 2170/2174 |
+| 055010 | 37.92 | 2.91 / 2.91 | 1.840 | 1.822 | 0.641 | 0.18 | 2163/2168 |
+| 055428 | 0.408 | 0.297 / 132.6 | 4.805 | 4.806 | 0.892 | 0.37 | 2174/2179 |
+
+(metres). **OpenVINS is not working correctly on this rig yet, and its numbers
+should not be read as an estimator comparison.** On bag 053636: tilt error 8.9
+deg rms (max 46 deg), position NEES mean 19365 and orientation NEES mean 1163
+(about 3 expected), path length 1.46x ground truth, 93% of updates with 0
+MSCKF features (SLAM updates average 20). Ruled out: IMU data (it matches
+ground-truth-derived specific force after equal smoothing, corr 0.98, rms
+0.06-0.16 m/s^2), camera-IMU time offset (online estimate +2 ms), and
+frame bookkeeping (§44). **Gravity 9.80 vs 9.81: differences of <= 0.03 m, an
+order of magnitude below OpenVINS's own error here; no effect measurable
+until OpenVINS works.** ORB-SLAM3's "converged" window is not converged on 2 of
+5 bags (26.6 m and 2.9 m steps inside it).
+
+### Joint covariance (serial run, 281 messages, full path A flight)
+
+Analysed from raw recorded matrices with relative tolerances:
+
+- **Rank deficit at `max_eig * 1e-12`: exactly 6 in 281/281.** 6th-smallest /
+  max eigenvalue: median 2e-16 (max 9e-16). 7th-smallest / max: median 4.5e-11
+  (min 8.7e-12), a gap of 4-5 orders. The extra "deficit" the checker reported
+  (12-24) came from its looser 1e-9 relative threshold catching these ~1e-11
+  directions.
+- **Localization:** the 6 smallest eigenvectors span (IMU pose - newest clone)
+  mid-flight; largest principal angle median 1.5e-4 deg, max 1.4e-3 deg.
+- **When it is published:** `visualize()` -> `publish_joint_covariance()`
+  runs after `feed_measurement_camera()` completes (propagate_and_clone, MSCKF
+  update, SLAM update, delayed init, SLAM and oldest-clone marginalisation), the
+  same point in both the live and serial nodes. The duplicate-row structure
+  survives that: max|row(IMU pose) - row(newest clone)| / max|C| has median
+  6.6e-17 and max 1.2e-13; ||C N|| / max_eig has median 4e-18. That is roundoff.
+- **Unresolved:** `check_joint_cov.py`'s earlier sample at t = 83.956 reported
+  dim 130 and a 2.3e-9 residual, while the recorded matrix at the same stamp is
+  dim 132 with 3e-19. Two serial runs should publish identical matrices, so this
+  is either a checker or receive-side issue, or joint-covariance content that is
+  not deterministic even though the state files are. Not yet explained.
