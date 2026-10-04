@@ -1448,3 +1448,91 @@ the run takes rather than what it measures, because nothing in it integrates
 over time. The criterion matters far more for the inertial configurations, where
 IMU preintegration intervals and the timing of VIBA relative to the flight are
 exactly what RTF perturbs. Both figures are given above rather than one.
+
+## 40. CORRECTION to s36: the full-flight metric is not reproducible, and the gravity result does not survive it
+
+The path A stereo-inertial runs were repeated to obtain clock beacons (s34's
+VIBA timing needed them). That repeat is an unintentional but decisive
+**repeatability check**: same gravity, same path, same image settings.
+
+| sample | full-flight online ATE |
+|---|---|
+| path A, gravity 9.81, **set 1** (n=5) | 0.437 +/- 0.129 m  [0.306..0.606] |
+| path A, gravity 9.81, **set 2** (n=5) | **2.159 +/- 1.742 m**  [0.453..4.893] |
+| path A, gravity 9.80 (n=4) | 1.369 +/- 0.856 m  [0.503..2.367] |
+
+**Two samples of five at identical gravity differ by 4.9x in the mean and do not
+overlap in range. The gravity-9.80 sample sits between them.**
+
+The pipeline was not behaving differently between sets -- every invariant
+matches: IMU init 2.440-2.444 s (set 1: 2.443 +/- 0.002), map resets 31-37
+(set 1: 31-38), RTF 0.278-0.279 (set 1: 0.279 +/- 0.005), zero or few tracking
+losses in both. Set 2 is a different draw, not a different configuration.
+
+### What this retracts
+
+**s36 claimed gravity reduced the mean error by 68% and the variance by 85%.
+That claim is withdrawn.** It rested entirely on comparing full-flight means,
+and the metric cannot distinguish 9.80 from 9.81: a second sample at 9.81 came
+out *worse* than the 9.80 sample. The effect of the gravity change is therefore
+**unmeasured**, not disproven.
+
+Two things are worth keeping separate here:
+
+- **The gravity mismatch was real** and worth fixing on its own terms:
+  ORB-SLAM3 hardcodes `GRAVITY_VALUE = 9.81` (`ImuTypes.h:46`) while the worlds
+  shipped 9.8, so the estimator was handed a 0.01 m/s^2 error that OpenVINS
+  would not have been handed. Removing a known error in an estimator's input
+  needs no experimental justification, and the change stays.
+- **The 68%/85% figures were an artefact** of a heavy-tailed metric sampled five
+  times. They should never have been reported as a measurement.
+
+Measuring the gravity effect properly needs converged-window data at BOTH
+gravities, and there is none at 9.80 -- those runs predate the beacon, and
+s39's evaluator refuses to estimate a window rather than guess one.
+
+### Why the full-flight metric behaves this way
+
+```
+corr(worst online step, full-flight ATE) = +0.997
+corr(VIBA 2 completion time, full ATE)   = +0.569
+corr(VIBA 2 completion time, converged ATE) = -0.823
+```
+
+The full-flight figure is a rescaling of the size of the retroactive jump
+(s39 measured +1.000 on path B; +0.997 here). Jump size depends on how much
+scale error accumulated before VIBA 2 lands, which depends on *when* it lands --
+46.5 s to 68.0 s across five runs of an identical ~64 s flight. A late
+correction on a short flight is the worst case, and whether a given run gets one
+is luck.
+
+The converged ATE correlates NEGATIVELY with VIBA 2 timing (-0.823): a later
+correction leaves a shorter, later window that has had more optimisation applied
+to it. Opposite sign, which is another sign the two metrics measure different
+things.
+
+### The metric that is reproducible
+
+| | converged ATE | coefficient of variation |
+|---|---|---|
+| path A, 9.81 (n=5) | 0.116 +/- 0.034 m | 0.29 |
+| path B, 9.81 (n=5) | 0.088 +/- 0.050 m | 0.57 |
+| full-flight, path A set 2 | 2.159 +/- 1.742 m | 0.81 |
+
+Converged ATE is also consistent *across paths* (0.116 vs 0.088 m, overlapping),
+while the full-flight figure differs by an order of magnitude between the same
+two sets. **Report converged ATE plus the worst online step. Do not report
+full-flight online ATE as an accuracy figure at all** -- it is a measure of the
+start-up transient, and it is not reproducible at n=5.
+
+### Path A vs path B, stated honestly
+
+Converged ATE: 0.116 +/- 0.034 m (A) against 0.088 +/- 0.050 m (B). Path B is
+nominally better, consistent with better excitation, but the intervals overlap
+and n=5 each. **Path B's benefit is suggestive, not established.** What IS
+established is that path B costs the visual-only control nothing: stereo-only
+scored 0.0302 +/- 0.0033 m on A and 0.0301 +/- 0.0033 m on B -- a 0.1 mm
+difference across 3.7x the path length.
+
+Stereo-inertial converged (0.088-0.116 m) remains ~3-4x worse than stereo-only
+(~0.030 m) on the same rig.
