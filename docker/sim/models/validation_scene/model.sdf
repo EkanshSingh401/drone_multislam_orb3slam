@@ -9,7 +9,12 @@
         <geometry><plane><normal>0 0 1</normal><size>16 16</size></plane></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/ground.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/ground.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/ground.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -20,7 +25,12 @@
         <geometry><box><size>0.2 11.0 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/wall_w.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/wall_w.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/wall_w.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -31,7 +41,12 @@
         <geometry><box><size>0.2 11.0 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/wall_e.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/wall_e.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/wall_e.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -42,7 +57,12 @@
         <geometry><box><size>9.5 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/wall_s.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/wall_s.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/wall_s.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -53,7 +73,12 @@
         <geometry><box><size>9.5 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/wall_n.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/wall_n.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/wall_n.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -64,7 +89,12 @@
         <geometry><box><size>1.4 2.0 1.8</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_ne.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_ne.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_ne.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -75,7 +105,12 @@
         <geometry><box><size>1.0 1.2 2.5</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_e.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_e.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_e.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -86,7 +121,12 @@
         <geometry><box><size>1.6 1.6 1.2</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_se.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_se.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_se.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -97,7 +137,12 @@
         <geometry><box><size>1.2 1.6 2.2</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_nw.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_nw.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_nw.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -108,7 +153,12 @@
         <geometry><box><size>0.8 1.6 1.5</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_w.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_w.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_w.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -119,7 +169,12 @@
         <geometry><box><size>1.6 1.2 2.8</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_sw.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_sw.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_sw.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -130,7 +185,12 @@
         <geometry><box><size>1.8 1.0 1.6</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_n.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_n.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_n.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
@@ -141,7 +201,12 @@
         <geometry><box><size>1.4 1.0 2.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <pbr><metal><albedo_map>model://validation_scene/materials/textures/box_s.png</albedo_map></metal></pbr>
+          <emissive>0.55 0.55 0.55 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://validation_scene/materials/textures/box_s.png</albedo_map>
+            <emissive_map>model://validation_scene/materials/textures/box_s.png</emissive_map>
+            <metalness>0.0</metalness><roughness>1.0</roughness>
+          </metal></pbr>
         </material>
       </visual>
     </link>
