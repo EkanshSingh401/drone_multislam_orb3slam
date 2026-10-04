@@ -1670,3 +1670,137 @@ output tree (`mkdir: Permission denied`, then
   `$HOME`.
 - The `covins_output` named volume had to be recreated once: an existing volume
   keeps the root ownership it was created with.
+
+# Phase 3 on the amd64 host: OpenVINS by deterministic replay
+
+## 44. Evaluating OpenVINS fairly: frames, gravity override, evaluation prep
+
+*Files: `docker/scripts/ov_prep.py` (new), `docker/scripts/replay_estimator.sh`*
+
+**Frames.** ORB-SLAM3's wrapper publishes the **base_link** pose: it conjugates
+the camera pose by `robotBase_to_cameraLink`, giving base motion relative to
+the initial base (`orb_slam3_interface.cpp:380`). Gazebo ground truth index 0
+is the model, i.e. base_link. OpenVINS publishes the **IMU** pose. On
+`x500_d455` the IMU sits at (0.11448, 0.00510, 0.23026) m in base_link (d455_link
+at (0.12, 0, 0.242), IMU at (-0.00552, 0.0051, -0.01174) inside it, with no
+rotation in either `<pose>`), a 0.257 m lever arm. Under yaw that sweeps a
+circle, so scoring the IMU position against base ground truth would charge
+OpenVINS up to ~0.5 m of pure bookkeeping error. `ov_prep.py` therefore:
+
+- converts OpenVINS's IMU poses to base_link (`T_w_b = T_w_i * T_i_b`) for ATE,
+  so both estimators are scored base-to-base against the same ground truth;
+- converts ground truth to the IMU (`T_w_i = T_w_b * T_b_i`) for NEES, because
+  OpenVINS's covariance belongs to the IMU state, so NEES is IMU-to-IMU;
+- crops both NEES inputs to the matched window (`--t-start`).
+
+**Gravity override.** `replay_estimator.sh` copies the estimator config and the
+two kalibr files it references by relative path into `<outdir>/ov_config/`, so
+every replay keeps an exact record of its settings. `OV_GRAVITY_MAG=<value>`
+edits only `gravity_mag` in that copy, and the edit is asserted. The generated
+config in `config_sim_only/` stays the single source; no second config file
+exists to drift from it.
+
+## 45. Sensor bags: disk preflight, compressed-bag reader, output on the data drive
+
+*Files: `docker/scripts/record_and_eval.sh`, `docker/scripts/run_experiment.sh`,
+`docker/scripts/bag_to_tum.py`, `docker/scripts/analyze_bag.py`*
+
+**What was lost.** The first five path A sensor recordings on this host went to
+`docker/out` on a 50 GB root partition with 1.7 GB free. rosbag2 does not stop
+with an error on a full disk: it leaves a truncated `flight.bag_0.mcap.zstd`
+that fails only at evaluation time (`Could not open ... Error: file too small`),
+after the flight is spent. Path B then died on `No space left on device`.
+
+**Output location (host, not repo).** `docker/out` is now a symlink to
+`/mnt/data/drone_sim_out` (866 GB ext4, mounted via fstab). Docker resolves the
+symlink for the bind mount, and the host-side scripts follow it. `docker/out/`
+is gitignored, so nothing in the repo changes. **A fresh clone needs the same
+symlink or a large-enough disk.**
+
+**Preflight.** `record_and_eval.sh` refuses to fly unless the output drive has
+**3x the expected bag size** free: 1x for the uncompressed mcap, 1x for the zstd
+copy written at close, 1x margin. Expected size = data rate x simulated length:
+
+- rate is derived from the rig: 2 imagers x 848x480 mono8 x 30 Hz = 24.4 MB per
+  simulated second with `RECORD_SENSORS=1`, or a 0.5 MB/s budget without;
+- length is a generous per-path budget: 120 s for path A (measured 65-72 s),
+  300 s for path B; `EXPECTED_SIM_S` overrides it.
+
+On refusal it exits 5 and writes `PREFLIGHT_FAILED.txt`; `run_experiment.sh`
+treats exit 5 as fatal and aborts the whole experiment rather than logging and
+moving on to runs that would hit the same wall. Verified both ways: with
+`EXPECTED_SIM_S=99999999` the experiment aborted at run 1 before flying; with
+defaults it reported `need 8.8 GB free (3 x 2.9 GB expected), have 793.6 GB`.
+
+**Compressed bags were unreadable.** Even a complete sensor bag could not be
+evaluated: `bag_to_tum.py` and `analyze_bag.py` used `rosbag2_py.SequentialReader`,
+which cannot open FILE-compressed bags (`invalid magic bytes in Header:
+0x28B52FFD...`, the zstd frame magic). Both now read `compression_mode` from
+`metadata.yaml` and use `SequentialCompressionReader` when it is `FILE`. Before
+this, no `RECORD_SENSORS=1` bag had ever been evaluable. Side effect worth
+knowing: that reader decompresses to an uncompressed `.mcap` beside the `.zstd`
+and leaves it (1.79 GB next to 252 MB for one path A flight).
+
+**Measured on the test flight:** 252 MB compressed / 1.79 GB raw for 72 s of
+sim; 2181/2182 IR frames, 14396 IMU samples, 4363 ground-truth poses. ORB-SLAM3
+stereo-inertial converged ATE 0.046 m (window from sim t = 97.42 s); the
+full-flight figure, 11.9 m, is the start-up transient and is not an accuracy
+metric (s40).
+
+## 46. OpenVINS never initialised on a flight; replay through ROS topics is not deterministic
+
+*Files: `docker/sim/tools/gen_d455_sim.py` -> `config_sim_only/openvins_estimator_config.yaml`,
+`docker/scripts/ov_prep.py`, `docker/scripts/phase3_openvins.sh`*
+
+### init_imu_thresh 1.5 -> 0.5 (measured)
+
+On the first recorded path A bag OpenVINS tracked all 2191 frames and
+**never initialised**: 1950 `failed static init: no accel jerk detected`, then
+`... platform moving too much` once airborne. Its static test is the std of the
+accel vector over each half of `init_window_time`: the newer half must exceed
+`init_imu_thresh` while the older half must not. Measured from that bag's
+`/camera/imu`:
+
+| window | accel std |
+|---|---|
+| on the ground | ~0.05 m/s^2 |
+| PX4 takeoff, peak | 1.07 m/s^2 |
+
+At 1.5 the trigger is unreachable. 0.5 is 10x the stationary floor with ~0.6
+m/s^2 below the takeoff peak, and the predicted trigger time (t ~ 56.55 s) matched
+the observed initialisation (t = 56.576 s). Changed in the generator, the single
+source of truth; `--check` passes and the regenerated config differs only in
+this line. Phase 2 and the Mac never exercised this, because OpenVINS had only
+been boot-tested, not run on a flight.
+
+### Determinism: FAILS under replay through ROS topics
+
+Same bag, replayed twice through `run_subscribe_msckf`:
+
+- Pair 1: OpenVINS's own per-update state (`save_total_state`, 1895 rows) was
+  byte-identical, but the published `/odomimu` stream (12485 rows) was not:
+  517 rows differed, by up to 0.248 m.
+- Pair 2: **the state files differed as well, from the first state at
+  initialisation** (~1e-4 m), growing to 0.0276 m max later in the flight. Pair
+  1's match was luck.
+
+**Cause.** With the default `multi_threading_subs: false`, a queued image is
+processed inside the first IMU callback stamped after it
+(`ROS2Visualizer::callback_inertial`). Whether the image has arrived by then, and
+how many newer IMU samples are already buffered, depends on DDS delivery timing
+during playback, not on the bag. The very first state already differing is
+consistent with the static initialiser anchoring its window to the newest
+buffered IMU sample. `/odomimu` is also propagated from whatever state exists
+at each IMU callback, which is why it differs more.
+
+**Consequence.** No replay rate makes this bit-exact; it is the subscription
+path, not the data. The fix is OpenVINS's own serial mode: read the bag
+directly and feed IMU and stereo pairs to `VioManager` in timestamp order on one
+thread. The fork ships only the ROS 1 version (`ov_msckf/src/ros1_serial_msckf.cpp`);
+ROS 2 builds get only `run_subscribe_msckf`. **Not yet done: it needs a change
+to the open_vins fork and a pin bump.**
+
+`ov_prep.py` already evaluates OpenVINS from the per-update state files rather
+than `/odomimu` (diagonal covariance from `ov_state_std.txt`, with the
+full-covariance `/odomimu` rows at update stamps kept as a NEES cross-check), so
+it will work unchanged on serial-runner output.

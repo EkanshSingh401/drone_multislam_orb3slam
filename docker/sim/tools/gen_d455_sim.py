@@ -794,8 +794,17 @@ zupt_only_at_beginning: false
 # The scripted flight holds the airframe stationary on the ground for well
 # over init_window_time before arming, then climbs -- which is the
 # stationary-window-then-jerk sequence static initialisation needs.
+#
+# init_imu_thresh is MEASURED, not the stock 1.5 (PATCHES.md s46). OpenVINS's
+# test is the std of the accel vector over each half of init_window_time: the
+# newer half must exceed the threshold, the older half must not. On recorded
+# x500_d455 bags that statistic is ~0.05 m/s^2 on the ground and peaks at
+# ~1.07 m/s^2 during PX4's takeoff -- so at 1.5 OpenVINS never initialised on
+# any flight ("no accel jerk detected", then "platform moving too much" once
+# airborne). 0.5 is 10x the stationary floor with ~0.6 m/s^2 of headroom below
+# the takeoff peak.
 init_window_time: 2.0
-init_imu_thresh: 1.5
+init_imu_thresh: 0.5
 init_max_disparity: 10.0
 init_max_features: 50
 
