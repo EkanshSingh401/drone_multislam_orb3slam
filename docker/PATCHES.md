@@ -1877,3 +1877,68 @@ Analysed from raw recorded matrices with relative tolerances:
   dim 132 with 3e-19. Two serial runs should publish identical matrices, so this
   is either a checker or receive-side issue, or joint-covariance content that is
   not deterministic even though the state files are. Not yet explained.
+
+## 48. Fork sanity, MSCKF starvation, and the fast_threshold rule (pre-registered)
+
+### Fork sanity: OpenVINS's own simulator is healthy
+
+`run_simulation` on the fork's stock `config/rpng_sim` (`tum_corridor1`, 296 m
+over 292 s), scored directly from its saved state, std and ground-truth files
+(same world frame, first 10 s skipped): **position RMSE 0.046 m, orientation
+RMSE 0.18 deg, NEES position 3.8 / orientation 0.7** (diagonal covariance, ~3
+expected). The process segfaults during ROS publisher teardown *after* the
+trajectory completes; the estimator itself is fine. **The fork and core
+estimator are not the problem; the input from our sim is.** (EuRoC V1_01 could
+not be fetched: the ETH Research Collection rejects scripted downloads with
+HTTP 429.)
+
+### Conventions ruled out (read-only checks)
+
+- Stereo geometry: the config's cam0->cam1 is a 0.095 m baseline with cam1 at +x
+  in cam0's optical frame, matching the SDF. Disparity measured on bag images is
+  positive for 95-100% of matches, so infra1 is the left camera.
+- Init: tilt error 1.07 deg at init, below 0.5 deg within 2 s, 0.5 deg rms
+  overall, after aligning the constant world-yaw offset. (An earlier figure of
+  "8.9 deg rms" compared gravity directions across world frames 180 deg apart
+  in yaw; it was wrong.)
+- IMU frame: stationary accel (-0.024, -0.016, 9.833) m/s^2 in the IMU frame
+  implies 0.17 deg tilt; ground truth is 0 deg and IMU axes = base axes.
+- `ov_eval error_singlerun posyaw` orientation RMSE (15-33 deg) and its NEES are
+  distorted by a yaw alignment fitted to metre-scale position error; revisit
+  once position is fixed.
+
+### Why MSCKF is starved (instrumented diagnostic build, not committed)
+
+Bag 053636, 1895 updates, current config:
+
+| | |
+|---|---|
+| tracked features per image (trackhist) | ~30-45 of `num_pts: 200` |
+| MSCKF candidates | 2019 total, ~1 per update; 70% of updates have none |
+| ... from lost tracks / marginalised / max-track leftovers | 1743 / 132 / 145 |
+| SLAM features in state | mean 20, max 48 (cap 50) |
+| rejected in the MSCKF updater | 1672 (83%): triangulation 1345, <2 measurements 240, refine 47, **chi2 40** |
+
+Not chi2 rejection, and not mainly SLAM promotion either: too few features are
+tracked, and the short tracks of distant features (median stereo disparity
+2.4-6 px, i.e. 7-18 m) fail triangulation. Sim(3) alignment gives scale
+0.70-0.85 on the three non-diverged bags (0.03 / 0.11 on the diverged two),
+with ATE still 0.65-1.2 m, so the long path is real metric error, not jitter.
+
+### fast_threshold rule -- fixed BEFORE any ATE is computed with a new value
+
+`fast_threshold` is a sensor-matching front-end setting: ORB-SLAM3 lowers its
+FAST threshold automatically (20 -> 7) on low-contrast images, while OpenVINS
+uses a fixed value; at 30 it tracks ~30-45 of 200 features here.
+
+- **Rule:** on ONE tuning bag, run the serial runner at each threshold in the
+  grid {30, 25, 20, 15, 12, 10, 8, 7, 6, 5}. Measure the **mean number of
+  features tracked per frame in cam0** (left camera) over all frames. Choose
+  the **highest threshold whose mean is >= 150**. If none reaches 150, choose 5
+  and say so.
+- **Tuning bag:** path A `20261004-053636`. It is excluded from the results.
+- **Nothing else changes:** `num_pts`, grid, KLT, MSCKF/SLAM limits, noise,
+  `init_imu_thresh` all stay as they are.
+- **Results:** path A on the other four bags (054056, 054533, 055010, 055428).
+- The same rule is to be applied on the real D455, so the counts at every
+  threshold are logged below, not just the chosen value.
