@@ -1385,3 +1385,66 @@ sensor timing the estimator is being evaluated on, and its ATE is not comparable
 with runs that were. This is the same discipline applied to the recorder-overrun
 run of s33, for the same reason -- a number produced under different conditions
 is not a measurement of the same thing.
+
+## 39. Gravity comparison, completed with a control -- and a correction to s35
+
+The stereo-only runs exist as a **control**: stereo-only ORB-SLAM3 consumes no
+IMU, so gravity cannot affect it. If the gravity change were doing something
+other than what is claimed, the control would move too.
+
+### Stereo-inertial (what gravity acts on)
+
+| | gravity 9.8 (4 runs) | gravity 9.81 (5 runs) |
+|---|---|---|
+| ATE rmse | 1.369 +/- 0.856 m | **0.437 +/- 0.129 m** |
+| RPE rmse @1 m | 0.733 +/- 0.546 m | **0.228 +/- 0.087 m** |
+
+Mean error down 68%, sample standard deviation down 85%.
+
+### Stereo-only (control)
+
+| | gravity 9.8 | gravity 9.81 (3 runs) |
+|---|---|---|
+| ATE rmse | 0.0138 m **(n=1)** | 0.0302 +/- 0.0033 m |
+| RPE rmse | 0.0172 m (n=1) | 0.0181 +/- 0.0008 m |
+
+The control stayed in the same regime -- a few centimetres, flat error, no VIBA
+markers, zero tracking losses in all three runs -- which is the point. It did
+**not** reproduce 0.0138 m exactly, and it could not have been expected to.
+
+### Correction to s35
+
+**s35 reported the stereo-only/stereo-inertial gap as "100x". That figure came
+from a single stereo-only run and is wrong.** With three samples the stereo-only
+level on this rig is 0.0302 +/- 0.0033 m, and the 0.0138 m run was the best of
+the distribution, not its centre. Recomputed against the three-run mean:
+
+| | gap to stereo-only |
+|---|---|
+| stereo-inertial at 9.8 | **45x** (not 100x) |
+| stereo-inertial at 9.81 | **14x** |
+
+The qualitative conclusion of s35 survives intact -- stereo-only is more than an
+order of magnitude better, the VIBA discontinuity is absent, the error is flat,
+and the 95 mm baseline is not the limitation. Only the multiplier was
+overstated, by quoting a ratio built on n=1. RPE is the more stable control
+statistic and it barely moved (0.0172 -> 0.0181 +/- 0.0008), which is what gives
+confidence the control itself is sound.
+
+### The RTF acceptance criterion, applied
+
+Run 1 came in at **RTF 0.113**, outside the 0.27-0.28 band (runs 2 and 3: 0.273,
+0.265). Per s38 it is reported but flagged, not silently averaged:
+
+```
+  all three runs    0.0302 +/- 0.0033 m
+  RTF-in-band only  0.0286 +/- 0.0024 m   (runs 2 and 3)
+```
+
+The depressed run cost about 17% of ATE -- measurable, and not nearly the
+disqualifying effect a 2.4x RTF drop might suggest. Useful calibration on the
+criterion itself: for a **visual-only** estimator, RTF mostly changes how long
+the run takes rather than what it measures, because nothing in it integrates
+over time. The criterion matters far more for the inertial configurations, where
+IMU preintegration intervals and the timing of VIBA relative to the flight are
+exactly what RTF perturbs. Both figures are given above rather than one.
