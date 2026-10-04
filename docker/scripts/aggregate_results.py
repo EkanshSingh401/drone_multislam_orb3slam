@@ -91,6 +91,24 @@ def main() -> int:
         rpe_c = parse_evo(rd / "rpe_covins.txt")
         ape_pi = parse_evo(rd / "ape_orbslam3_postinit.txt")
         rpe_pi = parse_evo(rd / "rpe_orbslam3_postinit.txt")
+        # The CONVERGED window (post VIBA 2) is the primary metric: before it,
+        # the published stream is the pre-refinement estimate plus the
+        # discontinuity where each correction lands, and the full-flight figure
+        # mostly measures that transient -- 9.005 m full flight against 0.0535 m
+        # converged on one path B run. Written by eval_converged.sh.
+        ape_cv = parse_evo(rd / "ape_converged.txt")
+        rpe_cv = parse_evo(rd / "rpe_converged.txt")
+        conv_equals_full = False
+        cvf = rd / "converged.txt"
+        if cvf.exists():
+            kv = dict(l.split("=", 1) for l in cvf.read_text().splitlines() if "=" in l)
+            conv_equals_full = kv.get("converged_equals_full") == "yes"
+        # Stereo-only has no IMU and therefore no visual-inertial BA, so its
+        # converged window IS the full flight. Carry the full-flight value
+        # across rather than leaving a hole that reads as missing data.
+        if conv_equals_full:
+            ape_cv = dict(ape_o)
+            rpe_cv = dict(rpe_o)
         r = parse_rates(root / f"run{i}_rates.log")
 
         # Prefer the POST-HOC bag analysis for RTF/duration/path: the live
@@ -125,9 +143,13 @@ def main() -> int:
             "rpe_c": rpe_c.get("rmse", float('nan')),
             "ape_pi": ape_pi.get("rmse", float('nan')),
             "rpe_pi": rpe_pi.get("rmse", float('nan')),
+            "ape_cv": ape_cv.get("rmse", float('nan')),
+            "rpe_cv": rpe_cv.get("rmse", float('nan')),
             "init_delay": init.get("imu_init_delay_s", float('nan')),
         }, r))
-        for k, v in (("ORB-SLAM3 ATE rmse", ape_o.get("rmse")),
+        for k, v in (("CONVERGED ATE rmse (primary)", ape_cv.get("rmse")),
+                     ("CONVERGED RPE rmse (primary)", rpe_cv.get("rmse")),
+                     ("ORB-SLAM3 ATE rmse", ape_o.get("rmse")),
                      ("ORB-SLAM3 RPE rmse", rpe_o.get("rmse")),
                      ("ORB ATE post-IMU-init", ape_pi.get("rmse")),
                      ("ORB RPE post-IMU-init", rpe_pi.get("rmse")),
@@ -141,18 +163,24 @@ def main() -> int:
             rates.setdefault(k, []).append(v)
 
     print("\nPER-RUN  (RMSE in metres; RTF/sim/path are POST-HOC from the bag)")
-    print(f"  {'run':<6} {'ORB ATE':>8} {'ORB RPE':>8} {'postATE':>8} {'postRPE':>8}"
+    print(f"  {'run':<6} {'convATE':>8} {'convRPE':>8} {'fullATE':>8} {'fullRPE':>8}"
           f" {'IMUinit':>8} {'COV ATE':>8} {'COV RPE':>8} {'RTF':>6} {'sim s':>6} {'path m':>7}")
     for name, m, r in per_run:
         def f(x, w=8): return f"{x:{w}.3f}" if x == x else " " * (w - 3) + "n/a"
-        print(f"  {name:<6}{f(m['ape_o'])}{f(m['rpe_o'])}{f(m['ape_pi'])}{f(m['rpe_pi'])}"
+        # convATE/convRPE first, because that is the primary metric; fullATE is
+        # the online figure a planner would actually consume, kept beside it.
+        # The post-IMU-init columns are gone: they were bit-identical to the
+        # full-flight ones on every stereo-inertial run (the estimate does not
+        # start publishing until after IMU init -- see s34/s33), so they carried
+        # no information and crowded out the column that does.
+        print(f"  {name:<6}{f(m['ape_cv'])}{f(m['rpe_cv'])}{f(m['ape_o'])}{f(m['rpe_o'])}"
               f"{f(m['init_delay'])}{f(m['ape_c'])}{f(m['rpe_c'])}"
               f" {r.get('rtf', float('nan')):6.3f} {r.get('sim_s', float('nan')):6.1f}"
               f" {r.get('path_m', float('nan')):7.2f}")
 
     print("\nAGGREGATE  (mean +/- sample stdev [min..max])")
-    for k in ("ORB-SLAM3 ATE rmse", "ORB-SLAM3 RPE rmse",
-              "ORB ATE post-IMU-init", "ORB RPE post-IMU-init",
+    for k in ("CONVERGED ATE rmse (primary)", "CONVERGED RPE rmse (primary)",
+              "ORB-SLAM3 ATE rmse", "ORB-SLAM3 RPE rmse",
               "IMU init delay (s)",
               "COVINS    ATE rmse", "COVINS    RPE rmse"):
         if k in collected:
