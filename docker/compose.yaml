@@ -43,6 +43,8 @@ services:
       - "5902:5902"     # raw VNC -> COVINS RViz
     environment:
       START_ROSCORE: "1"
+      HOME: "/home/sim"
+      ROS_HOME: "/home/sim/.ros"
       START_VNC: "1"
       DISPLAY: ":98"
       VNC_PORT: "5902"
@@ -65,6 +67,11 @@ services:
     # 37 zombies accumulated across a five-run experiment. They cost no CPU, but
     # they made `pgrep -c` count dead processes and sent me chasing a phantom
     # "leaked process" explanation for a real-time-factor decay.
+    # PATCHES.md §42: run as the host user so files written to ./out are owned by
+    # them, not root. UID/GID default to 1000 because bash does not export UID
+    # and does not define GID at all. HOME points at a world-writable dir baked
+    # into the image (/root stays root's; it is only made traversable).
+    user: "${UID:-1000}:${GID:-1000}"
     init: true
     shm_size: "1gb"
     stop_grace_period: 10s
@@ -93,6 +100,8 @@ services:
     environment:
       # Rewrites sys.server_ip in the agent's config_comm.yaml at startup.
       COVINS_SERVER_IP: "covins-backend"
+      HOME: "/home/sim"
+      ROS_HOME: "/home/sim/.ros"
       START_VNC: "1"
       DISPLAY: ":99"
       VNC_PORT: "5901"
@@ -118,6 +127,11 @@ services:
     # 37 zombies accumulated across a five-run experiment. They cost no CPU, but
     # they made `pgrep -c` count dead processes and sent me chasing a phantom
     # "leaked process" explanation for a real-time-factor decay.
+    # PATCHES.md §42: run as the host user so files written to ./out are owned by
+    # them, not root. UID/GID default to 1000 because bash does not export UID
+    # and does not define GID at all. HOME points at a world-writable dir baked
+    # into the image (/root stays root's; it is only made traversable).
+    user: "${UID:-1000}:${GID:-1000}"
     init: true
     shm_size: "2gb"
     deploy:

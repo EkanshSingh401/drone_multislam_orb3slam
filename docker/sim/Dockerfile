@@ -512,6 +512,16 @@ COPY docker/sim/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/scripts/ /opt/scripts/
 RUN chmod +x /usr/local/bin/entrypoint.sh /opt/scripts/*.sh /opt/scripts/*.py 2>/dev/null || true
 
+# PATCHES.md §42: the container runs as the host user (compose `user:`), not
+# root. Make the root-owned build tree usable without changing ownership:
+# /root becomes traversable (everything under it is already a+rX), a shared
+# world-writable HOME is provided, and the few paths written at RUNTIME are made
+# writable. Build outputs stay root-owned and read-only.
+RUN chmod 755 /root && \
+    install -d -m 1777 /home/sim && \
+    chmod -R a+rwX ${COVINS_PREFIX}/config ${PX4_DIR}/build/px4_sitl_default/rootfs
+ENV HOME=/home/sim
+
 WORKDIR ${WS}
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["bash"]

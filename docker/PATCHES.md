@@ -1557,3 +1557,28 @@ deterministic, because Local Mapping runs asynchronously in wall-clock time, so
 single runs should not be compared. The amd64 host runs at roughly twice the
 Mac's RTF; that did not produce a measurable ATE difference at n=3-4, and the
 sim is deliberately **not** throttled to match the Mac.
+
+## 42. Containers run as the host user, not root
+
+*Files: `docker/compose.yaml`, `docker/sim/Dockerfile`, `docker/covins/Dockerfile`*
+
+Running as root made every file written through the `./out` bind mount
+root-owned, so the host-side `run_experiment.sh` could not write into its own
+output tree (`mkdir: Permission denied`, then
+`path_version.txt: Permission denied` on every run).
+
+- Both services now set `user: "${UID:-1000}:${GID:-1000}"`. The defaults matter:
+  bash does not export `UID` and does not define `GID` at all, so a bare
+  `${UID}:${GID}` would reach compose as `":"`.
+- The images were built as root under `/root` (mode 700). Ownership is **not**
+  changed: `/root` is made traversable (`755`, and everything below it was
+  already `a+rX`), and only the paths written at **runtime** are made writable:
+  `$COVINS_PREFIX/config` (the entrypoint rewrites `sys.server_ip`), PX4's
+  `build/px4_sitl_default/rootfs` (per-instance params and logs) and
+  `covins_backend/output`. Build outputs stay root-owned and read-only.
+- `HOME=/home/sim` (mode `1777`, baked in, and set in compose), with
+  `ROS_HOME=/home/sim/.ros`. A UID with no `/etc/passwd` entry otherwise gets
+  `HOME=/`, and ROS 2 logging, gz's cache and evo's settings all write under
+  `$HOME`.
+- The `covins_output` named volume had to be recreated once: an existing volume
+  keeps the root ownership it was created with.

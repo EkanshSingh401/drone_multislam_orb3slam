@@ -197,6 +197,16 @@ COPY docker/scripts/ /opt/scripts/
 RUN chmod +x /usr/local/bin/covins-entrypoint.sh && \
     chmod +x /opt/scripts/*.sh /opt/scripts/*.py 2>/dev/null || true
 
+# PATCHES.md §42: the container runs as the host user (compose `user:`), not
+# root. Make the root-owned build tree usable without changing ownership:
+# /root becomes traversable (everything under it is already a+rX), a shared
+# world-writable HOME is provided, and the few paths written at RUNTIME are made
+# writable. Build outputs stay root-owned and read-only.
+RUN chmod 755 /root && \
+    install -d -m 1777 /home/sim && \
+    chmod -R a+rwX ${CATKIN_WS}/src/covins/covins_backend/output
+ENV HOME=/home/sim
+
 WORKDIR ${CATKIN_WS}
 ENTRYPOINT ["/usr/local/bin/covins-entrypoint.sh"]
 CMD ["bash"]
