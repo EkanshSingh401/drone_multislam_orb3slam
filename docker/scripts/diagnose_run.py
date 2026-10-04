@@ -99,6 +99,12 @@ def main() -> int:
     ap.add_argument("--est", default="est_orbslam3.tum")
     ap.add_argument("--gt", default="gt.tum")
     ap.add_argument("--tol", type=float, default=0.05)
+    ap.add_argument("--t-start", type=float, default=None,
+                    help="ignore samples before this SIMULATION time, matching "
+                         "evo's --t_start. Used for the converged (post-VIBA-2) "
+                         "window so it can be computed on the host, without "
+                         "running anything inside the container while an "
+                         "experiment is in flight.")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -106,6 +112,12 @@ def main() -> int:
     t_gt, p_gt = load_tum(rd / args.gt)
     t_es, p_es = load_tum(rd / args.est)
 
+    if args.t_start is not None:
+        keep = t_es >= args.t_start
+        t_es, p_es = t_es[keep], p_es[keep]
+        if len(t_es) < 10:
+            raise SystemExit(f"diagnose: only {len(t_es)} samples at or after "
+                             f"t={args.t_start}; nothing to diagnose")
     ke, kg = associate(t_gt, p_gt, t_es, p_es, args.tol)
     if len(ke) < 10:
         raise SystemExit(f"diagnose: only {len(ke)} associations; cannot diagnose")
