@@ -2058,3 +2058,89 @@ is zero-velocity updates; `try_zupt` is **false** in this config. Not changed.
   exactly, so it is the alignment, not the tool. NEES is now also computed on
   the full post-init trajectory, but those values still include the post-landing
   divergence and are not yet meaningful as a consistency measure.
+
+## 50. ZUPT test: fires while airborne on all 10 validation bags — left disabled
+
+**Semantics of `zupt_chi2_multipler: 0`** (`UpdaterZeroVelocity::try_update`):
+a ZUPT is accepted if `disparity_passed || (chi2 <= mult*chi2_95 && |v| <= zupt_max_velocity)`.
+With mult 0 the IMU branch can never pass, so ZUPT is **disparity-only**
+(mean disparity < `zupt_max_disparity` with > 20 features), and the
+velocity gate is bypassed on that path.
+
+**Instrumentation.** Fork `7da42fa`: `[ZUPTEV] t=<image time> accepted=<0|1> v=<|v_est|>`
+after every ZUPT decision (INFO, no behaviour change). Pin bumped in
+`docker/sim/Dockerfile`. `docker/scripts/zupt_events.py <replay_dir> [--json]`
+matches each decision to GT speed (+-0.1 s central difference) and height
+above initial ground; airborne = height > 0.05 m; exit 1 on any airborne accept.
+
+**Test.** `try_zupt: true`, `zupt_max_disparity 0.5`, mult 0, serial runner,
+g 9.81, all 10 validation bags, outputs `replay/<run>_ovser_g9.81_zupt/`.
+
+| run | accepted | **airborne** | after touchdown | max GT speed at accept (m/s) | first accept after touchdown (s) |
+|---|---|---|---|---|---|
+| A 193700 | 1307 | 483 | 595 | 0.224 | 0.09 |
+| A 194115 | 1317 | 504 | 597 | 0.208 | 0.11 |
+| A 194531 | 1232 | 417 | 599 | 0.186 | 0.10 |
+| A 195005 | 1244 | 439 | 602 | 0.225 | 0.11 |
+| A 195439 | 1330 | 512 | 593 | 0.175 | 0.24 |
+| B 195913 | 2608 | 1803 | 594 | 0.226 | 0.13 |
+| B 200912 | 2599 | 1789 | 595 | 0.226 | 0.10 |
+| B 201905 | 2660 | 1838 | 596 | 0.216 | 0.11 |
+| B 202940 | 2596 | 1780 | 601 | 0.255 | 0.13 |
+| B 204137 | 2633 | 1817 | 601 | 0.222 | 0.09 |
+
+**FAIL**: airborne ZUPTs on every bag (h ~1.3 m, GT speed 0.07–0.25 m/s; slow
+climb and hover). Disparity does not separate the cases (run 193700):
+airborne disparity min 0.039 / p1 0.075 / p5 0.131 px; after touchdown p50 0.000 /
+p95 0.038 / p99 0.131 px. No threshold on mean disparity removes the
+airborne accepts without losing ground accepts. Probable reason: noise-free
+simulated cameras make a hovering view nearly pixel-static (OPEN_ISSUES §1).
+The chi2 at these accepts (55–87) shows the IMU test would have rejected them.
+
+`try_zupt` reverted to `false` in `gen_d455_sim.py`; ZUPT config is a pending
+decision. ZUPT results above must not be used as estimator results.
+
+## 51. Ground-truth airborne window (step 2): both estimators, all 20 bags
+
+`docker/scripts/gt_window_eval.py`: window = [GT takeoff + 3 s, GT touchdown],
+takeoff/touchdown at 0.05 m above initial ground (touchdown after the last
+time above 0.5 m). Same window for every estimator; SE(3) ATE, no scale,
+0.05 s association; Sim(3) scale on the same window. Inputs: live
+`eval/<run>/est_orbslam3.tum` (ORB-SLAM3 stereo-inertial, **online** poses) and
+serial-runner `replay/<run>_ovser_g9.81/est_openvins.tum` (base_link), ZUPT off.
+Raw: `docker/out/replay/gt_window_s51.jsonl`. "coverage" ≈0.5 everywhere just
+reflects estimate rate vs 50 Hz GT — no gaps in the window for either estimator.
+
+ATE (m) / Sim(3) scale:
+
+| run | ORB-SLAM3 | OpenVINS |
+|---|---|---|
+| valA 193700 | 6.02 / 0.14 | 0.029 / 0.995 |
+| valA 194115 | 8.24 / 0.11 | 0.021 / 0.998 |
+| valA 194531 | 1.42 / 0.72 | 0.037 / 0.986 |
+| valA 195005 | 1.12 / 0.85 | 0.029 / 0.994 |
+| valA 195439 | 31.8 / 0.03 | 0.029 / 1.001 |
+| valB 195913 | 2.53 / 0.45 | 0.069 / 1.000 |
+| valB 200912 | 2.83 / 0.41 | 0.077 / 1.000 |
+| valB 201905 | 51.0 / 0.01 | 0.046 / 1.003 |
+| valB 202940 | 1.47 / 0.71 | 0.056 / 0.998 |
+| valB 204137 | 3.15 / 0.36 | 0.050 / 1.000 |
+| forA 053636 (tuning, excluded) | 0.34 / 0.96 | 0.70 / 0.86 |
+| forA 054056 | 11.6 / 0.07 | 4.19 / 0.23 |
+| forA 054533 | 29.2 / 0.03 | 0.80 / 0.82 |
+| forA 055010 | 6.73 / 0.08 | 0.110 / 1.000 |
+| forA 055428 | 64.9 / 0.01 | 0.42 / 0.91 |
+| forB 055847 | 0.30 / 0.98 | 0.36 / 0.97 |
+| forB 060837 | 1.31 / 0.78 | 0.25 / 0.97 |
+| forB 061845 | 0.65 / 0.94 | 2.57 / 0.47 |
+| forB 062853 | 12.9 / 0.06 | 0.28 / 0.97 |
+| forB 063858 | 0.51 / 0.94 | 154.1 / 0.002 |
+
+OpenVINS validation values equal §49 R1 to 3 decimals (consistency check of
+the new window). Time-to-usable-estimate (first output − takeoff): OpenVINS
++0.03 to +0.28 s on all runs. ORB-SLAM3 first output is either ~−10 s
+(tracking from the ground before takeoff) or +0.0–0.3 s; its first output is
+not a *usable* (metric) estimate — Sim(3) scales of 0.01–0.85 show the online
+trajectory carries pre-IMU-init / map-reset segments. A usable-time definition
+for ORB-SLAM3 (e.g. first time after which ATE on a trailing span stays below a
+bound, or VIBA-2) is still open, as is replaying ORB-SLAM3 on the bags.

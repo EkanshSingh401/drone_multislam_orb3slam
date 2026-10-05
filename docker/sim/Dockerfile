@@ -338,7 +338,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # all phase-3 evaluation (PATCHES.md s47); run_subscribe_msckf is unchanged.
 # 5b14b93 adds DEBUG-level scene-degradation logging ([FI] [MSCKF] [TRACK] [GRID]);
 # estimator output verified byte-identical to 5aa2c83 (PATCHES.md s49).
-ARG OPEN_VINS_COMMIT=5b14b93ed527ce3fb49e496b8f85fe9b3c009d3f
+ARG OPEN_VINS_COMMIT=7da42fade69b32284753bbc69b696883382b0237
 ARG ACTIVE_SLAM_MSGS_COMMIT=a0790aafdb8dffa0eb33a0e7f471071d1edb9426
 ARG ACTIVE_SLAM_PLANNER_COMMIT=f56e1146256f009bc71a3b4c644afc8c7f2dcd14
 ARG ACTIVE_SLAM_INFORMATION_COMMIT=e2250686130f0d92adfb2bd126735638dddaf424

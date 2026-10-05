@@ -244,6 +244,10 @@ Later / noted, not started:
 ## 8. Open issues
 
 - OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
+- **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
+  (airborne accepts on all 10 validation bags, PATCHES §50). For hardware,
+  gate ZUPT on PX4's landed state (`vehicle_land_detected`) instead of image
+  disparity.
 - ORB-SLAM3 stereo-inertial is erratic on this rig (jumps after VIBA-2); no fair
   numbers yet.
 - Simulated cameras are noise-free, blur-free and perfectly calibrated while the
