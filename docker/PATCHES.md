@@ -2195,3 +2195,68 @@ frames reaching Track() − resets.
   and in order, so the remaining suspects are ORB-SLAM3's inertial settings
   (`orbslam3_d455_stereo_inertial.yaml`: Tbc, IMU noise, frequency, units/axes)
   -- open, not investigated yet.
+
+## 53. OpenVINS NEES on the GT window (step 3) and gravity 9.80 vs 9.81 (step 4)
+
+**NEES tool.** `docker/scripts/nees_window.py <replay_dir> <gt.tum>`: §51 GT
+window; GT interpolated to each estimate stamp (linear / slerp); diagonal
+covariance from `ov_state_std.txt` (all that is saved deterministically).
+Orientation error local (IMU frame), matching OpenVINS's JPL error. pos/ori
+NEES after posyaw (4-DOF) alignment; **roll/pitch NEES with no alignment**:
+error projected perpendicular to gravity in the IMU frame (a world-yaw offset
+lies exactly along it). Cross-check: pos/ori means equal `ov_eval
+error_singlerun posyaw` on the same window to within interpolation (e.g.
+193700: 90.0/110.2 vs 85.9/104.0 interpolated). Raw: `replay/nees_s53.jsonl`.
+
+Mean NEES (fraction inside 95% chi2 interval), g 9.81, validation, ZUPT off.
+Expected: pos 3, ori 3, rp 2; in-95 0.95.
+
+| run | pos | ori | roll/pitch | pos RMSE (m) | tilt RMSE / median σ (deg) |
+|---|---|---|---|---|---|
+| A 193700 | 86 (0.24) | 104 (0.15) | 117 (0.17) | 0.029 | 0.27 / 0.05 |
+| A 194115 | 55 (0.39) | 89 (0.16) | 213 (0.07) | 0.022 | 0.42 / 0.05 |
+| A 194531 | 30 (0.57) | 341 (0.35) | 460 (0.16) | 0.037 | 0.43 / 0.06 |
+| A 195005 | 134 (0.29) | 96 (0.16) | 233 (0.06) | 0.029 | 0.42 / 0.06 |
+| A 195439 | 47 (0.41) | 117 (0.19) | 289 (0.14) | 0.029 | 0.36 / 0.05 |
+| B 195913 | 220 (0.27) | 318 (0.14) | 364 (0.15) | 0.069 | 0.36 / 0.03 |
+| B 200912 | 257 (0.21) | 150 (0.26) | 163 (0.25) | 0.077 | 0.24 / 0.03 |
+| B 201905 | 159 (0.34) | 203 (0.16) | 206 (0.18) | 0.046 | 0.29 / 0.03 |
+| B 202940 | 257 (0.23) | 186 (0.18) | 208 (0.17) | 0.056 | 0.27 / 0.03 |
+| B 204137 | 60 (0.46) | 101 (0.25) | 116 (0.23) | 0.051 | 0.20 / 0.03 |
+
+**OpenVINS is overconfident by roughly 5–15x in sigma**, on every bag, while
+accurate. Breakdown (193700, 195913): horizontal position σ ≈ 5 cm
+(conservative), **vertical σ ≈ 2.4 mm (min 1.1 mm) vs ~2–3.5 cm z error**, tilt
+σ 0.02–0.04°/axis vs ~0.2°/axis scatter. Artefacts ruled out: GT
+association (interpolation changes NEES < 10%); GT–sensor time offset (scan
+±60 ms: best offset ≤ 4 ms, no change); constant mounting tilt (tilt error
+mean ≤ 0.12°, it is scatter, not bias); IMU noise mismatch (SDF white noise
+0.00226 rad/s and 0.0283 m/s² per sample at 200 Hz = configured densities
+1.6e-4 / 2e-3; OU bias σ_b·√(2/τ) = configured random walks). Cause open;
+the diagonal-only covariance can change NEES but cannot explain a 10x
+too-small z variance. Earlier NEES retractions (HANDOFF §7) still stand; these
+are the first numbers on a well-conditioned airborne window.
+
+**Gravity 9.80 vs 9.81** (world `<gravity>` is 9.81). All 10 validation bags
+replayed with `OV_GRAVITY_MAG=9.80` (`replay/<run>_ovser_g9.80/`), same GT
+window. Raw: `replay/gravity_s53.jsonl`, `gravity_nees_s53.jsonl`.
+
+| run | ATE 9.81 | ATE 9.80 | diff (m) | Sim(3) scale 9.81 / 9.80 |
+|---|---|---|---|---|
+| A 193700 | 0.0293 | 0.0288 | −0.0005 | 0.9947 / 0.9952 |
+| A 194115 | 0.0206 | 0.0203 | −0.0003 | 0.9977 / 0.9982 |
+| A 194531 | 0.0366 | 0.0358 | −0.0009 | 0.9863 / 0.9868 |
+| A 195005 | 0.0288 | 0.0283 | −0.0005 | 0.9945 / 0.9950 |
+| A 195439 | 0.0290 | 0.0292 | +0.0003 | 1.0012 / 1.0017 |
+| B 195913 | 0.0687 | 0.0688 | +0.0001 | 0.9996 / 1.0002 |
+| B 200912 | 0.0768 | 0.0771 | +0.0003 | 0.9999 / 1.0005 |
+| B 201905 | 0.0457 | 0.0462 | +0.0005 | 1.0029 / 1.0035 |
+| B 202940 | 0.0556 | 0.0555 | −0.0000 | 0.9980 / 0.9985 |
+| B 204137 | 0.0499 | 0.0500 | +0.0001 | 0.9999 / 1.0005 |
+
+Mean ATE difference (9.80 − 9.81): set A −0.4 mm, 95% CI [−0.9, +0.1];
+set B +0.2 mm, CI [−0.1, +0.4]. Opposite signs, both CIs include 0:
+**no ATE effect** by the replication rule. Sim(3) scale rises by
++0.0005–0.0006 on all 10 bags (replicates in both sets): a real but
+negligible scale effect, about half the 0.1% gravity change. NEES unchanged
+(≤ 2%).
