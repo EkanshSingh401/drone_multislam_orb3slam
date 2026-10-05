@@ -1,0 +1,277 @@
+# HANDOFF — phase 3 (OpenVINS vs ORB-SLAM3) on the amd64 simulation server
+
+Written 2026-10-04 so that a fresh session can continue from this file alone.
+Detailed history and reasoning live in `docker/PATCHES.md` (§41–§49 are this
+host's work). Where this file and PATCHES disagree, PATCHES carries the
+evidence; this file is the summary.
+
+---
+
+## 1. Where things stand
+
+| | |
+|---|---|
+| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ `4b0a691` (pushed). `amd64-gpu` points at the same commit. History is linear on top of the Mac's final commit `4624988`. |
+| OpenVINS fork | `EkanshSingh401/open_vins`, branch `openvins-integration` @ **`5b14b93`** (pushed), pinned by commit in `docker/sim/Dockerfile` (`OPEN_VINS_COMMIT`). |
+| Other forks | `active_slam_msgs` `a0790aa`, `active_slam_planner` `f56e114`, `active_slam_information` `e225068` (pinned in the Dockerfile). |
+| Who runs experiments | **This host only.** The Mac is retired from experiments. |
+| Images | `drone-sim:jazzy-amd64`, `covins-backend:melodic-amd64`. Build sim with `docker compose -f docker/compose.yaml build sim` (only the last layers rebuild for script/config changes). The scripts are **baked into the image**: rebuild + `up -d --force-recreate sim` after editing anything in `docker/scripts/`. |
+
+**Headline result so far.** In the nearby-structure *validation* scene,
+OpenVINS is accurate **while airborne** on all 10 flights (path A mean ATE
+0.029 m, path B 0.061 m, Sim(3) scale ≈ 1.00). It **diverges after touchdown**
+in 6 of 10 runs because, stationary on the ground, it loses its SLAM features,
+cannot re-triangulate (no parallax), and integrates the IMU alone. ZUPT is off.
+In the *forest* (degraded) scene it is 1–2 orders of magnitude worse in flight.
+ORB-SLAM3 stereo-inertial on the validation bags has **not yet been scored on a
+fair window** (see §6, next steps).
+
+---
+
+## 2. Host and environment
+
+- Ubuntu 22.04, Ryzen 9 5950X (32 threads, SMT on, no CPU isolation), 64 GB,
+  GTX 1080 Ti (Pascal, compute 6.1).
+- NVIDIA driver **580.178.04**, the last branch that supports Pascal, **apt-held**
+  (`apt-mark showhold`). Never upgrade it. Containers must use **CUDA 12.x**
+  (CUDA 13 dropped sm_61). Isaac ROS nvblox is unsupported (needs Ampere+ / driver 595+).
+- `nvidia-persistenced` runs with Ubuntu's `--no-persistence-mode`, so
+  persistence mode reads Disabled. Harmless.
+- Docker 29.4.3, nvidia-container-toolkit 1.19.0, default runtime `runc`; the
+  sim service requests the GPU in compose. Docker root is `/mnt/data/docker`.
+- **`docker/out` is a symlink to `/mnt/data/drone_sim_out`** (866 GB). The root
+  partition is only 50 GB: sensor bags must never go there. A fresh clone needs
+  the same symlink. `docker/out` is gitignored.
+- Containers run as the host user (`user: ${UID:-1000}:${GID:-1000}`, HOME
+  `/home/sim`); files in `docker/out` belong to `ekansh`.
+- Gazebo renders on the GPU via EGL. RTF with the full stack is ~0.72–0.79
+  during flights.
+- `git push` over HTTPS needs the gh credential helper:
+  `git -c credential.helper= -c credential.helper='!gh auth git-credential' push origin <branch>`.
+- `sudo` needs a TTY password; the user runs sudo commands themselves in a
+  separate terminal (the `!` prefix has no TTY).
+
+---
+
+## 3. Data on disk
+
+Experiment directories (under `docker/out/`), each with `rundirs.txt` listing
+its runs. Every run's sensor bag is `docker/out/eval/<run>/flight.bag`
+(FILE-zstd mcap; reading it leaves an uncompressed `.mcap` beside it).
+
+| condition | experiment dir | runs |
+|---|---|---|
+| validation, path A | `experiment_d455_pathA_validation_20261004-153547` | 193700 194115 194531 195005 195439 |
+| validation, path B | `experiment_d455_pathB_validation_20261004-155800` | 195913 200912 201905 202940 204137 |
+| forest, path A | `experiment_d455_pathA_20261004-013513` | **053636 (tuning bag — exclude from results)** 054056 054533 055010 055428 |
+| forest, path B | `experiment_d455_pathB_20261004-015734` | 055847 060837 061845 062853 063858 |
+
+All runs are prefixed `20261004-`. Live ORB-SLAM3 stereo-inertial ran during
+recording (its log is `docker/out/eval/<run>/orb_slam3.log`, with clock beacons).
+OpenVINS outputs are in `docker/out/replay/<run>_ovser_g9.81/` (serial runner),
+with per-run summaries `docker/out/replay/<run>_ovser_g9.81_{matched.txt,full.json,scene.json,nees*.txt}`.
+
+Junk to ignore: `experiment_d455_pathA_20261004-005410`, `..._012857`,
+`experiment_d455_pathB_20261004-011037` (disk-full / test attempts) and
+`experiment_d455_pathA_validation_20261004-152944` (single test flight; its run
+`193057` is a valid validation-A flight but is not part of the 5-run set).
+
+Also on disk: a 1-run forest stereo-only set (`experiment_d455_stereo_pathA_*`)
+and older phase-1/2 material from the Mac era.
+
+---
+
+## 4. How to run things
+
+All from the repo root on the host.
+
+```bash
+# record N flights with sensor bags (live ORB-SLAM3 stereo-inertial)
+WORLD=validation ALT=1.5 RECORD_SENSORS=1 PATH_VERSION=A RIG=d455 ./docker/scripts/run_experiment.sh 5
+#   WORLD=forest (default) | validation ;  PATH_VERSION=A | B
+#   disk preflight refuses to fly (exit 5) unless 3x the expected bag size is free
+
+# OpenVINS on recorded bags (deterministic serial runner), then evaluate
+./docker/scripts/phase3_openvins.sh determinism <exp_dir>        # two runs, must be byte-identical
+./docker/scripts/phase3_openvins.sh replay      <exp_dir> 9.81   # gravity_mag override via OV_GRAVITY_MAG
+./docker/scripts/phase3_openvins.sh evaluate    <exp_dir> 9.81
+./docker/scripts/phase3_openvins.sh jointcov    <exp_dir>
+./docker/scripts/phase3_openvins.sh topicspread <exp_dir>        # live node, 3 replays (one-off)
+python3 docker/scripts/phase3_table.py <exp_dir> 9.81 [--exclude 20261004-053636]
+```
+
+Key pieces:
+- `ros2_serial_msckf` (in the fork): reads the bag directly, drives the live
+  node's own `ROS2Visualizer` callbacks on one thread. **Bit-deterministic.**
+  `run_subscribe_msckf` (the live node) is unchanged and is not deterministic
+  under replay.
+- `docker/scripts/replay_estimator.sh --estimator openvins_serial` wraps it, copies the config
+  into `<outdir>/ov_config/` (with any `OV_GRAVITY_MAG` edit asserted), logs at DEBUG.
+- `ov_prep.py`: converts OpenVINS IMU poses to **base_link** for ATE
+  (IMU is 0.257 m from base_link), and ground truth to the **IMU** frame for NEES.
+  Uses the per-update state files (`ov_state_est/std.txt`), not `/odomimu`.
+- `ov_scene_stats.py`: median feature depth, triangulation and MSCKF rejection
+  rates, tracked features — parsed from the fork's DEBUG `[FI] [MSCKF] [TRACK] [GRID]` lines.
+- `ov_full_metrics.py`: OpenVINS full post-init ATE, Sim(3) scale, window coverage.
+- Configs are **generated**: `docker/sim/tools/gen_d455_sim.py --write|--check`
+  (rig, calibration, estimator configs, bridges) and
+  `docker/sim/tools/gen_validation_world.py --write|--check` (validation scene).
+  Never hand-edit `docker/sim/config_sim_only/*` or the validation world.
+
+Current OpenVINS estimator settings that differ from the Mac era:
+`init_imu_thresh 0.5` (measured, §46), `fast_threshold 5` (pre-registered rule, §48).
+`try_zupt false`, `zupt_max_disparity 0.5`, `zupt_max_velocity 0.1`,
+`zupt_chi2_multipler 0` (check what 0 means in `UpdaterZeroVelocity` before
+enabling ZUPT), `gravity_mag 9.81`.
+
+---
+
+## 5. Results (with definitions)
+
+**Definitions used below**
+- *ATE*: RMSE of position error after SE(3) Umeyama alignment, **no scale**,
+  nearest-neighbour association within 0.05 s, against Gazebo ground truth
+  (model pose = base_link). OpenVINS is converted to base_link first.
+- *Airborne segment*: from OpenVINS initialisation (≈0.4 s after takeoff) to
+  touchdown (ground-truth z drops below 0.05 m after the last time it was above
+  0.5 m). **Not yet the agreed GT window** — see next steps.
+- *Matched window (deprecated)*: ORB-SLAM3 VIBA-2 completion to end of bag,
+  imposed on both estimators (`eval_window_matched.sh`). Retired by decision;
+  see §7.
+- *Sim(3) scale*: scale from a Sim(3) alignment on the same span (1.0 = metric).
+- *Median depth (all attempts)*: median anchor-frame depth over all
+  triangulation attempts, accepted and rejected. *Tri reject*: triangulation
+  rejects / attempts at OpenVINS's feature initializer (MSCKF + SLAM init).
+
+**R1. OpenVINS, airborne segment, gravity_mag 9.81, fast_threshold 5** (§49)
+
+| set | n | ATE per run (m) | mean | Sim(3) | depth (all) | tri reject |
+|---|---|---|---|---|---|---|
+| validation A | 5 | 0.030 0.021 0.037 0.029 0.030 | **0.029** | 0.986–1.001 | 3.9–4.5 m | 57–69% |
+| validation B | 5 | 0.071 0.079 0.047 0.058 0.051 | **0.061** | 0.998–1.003 | 4.2–4.4 m | 59–64% |
+| forest A (excl. 053636) | 4 | 4.06 0.79 0.11 0.41 | 1.34 (median 0.60) | 0.23–1.00 | 6.0–8.7 m | 72–91% |
+| forest B | 5 | 0.36 0.25 2.57 0.28 152.6 | median 0.36 | 0.002–0.97 | 7.2–8.0 m | 85–94% |
+
+**R2. OpenVINS full post-init ATE (includes post-landing), validation** (§49):
+A 0.043 4.90 2.90 0.60 6.44; B 2.14 0.22 3.07 3.52 0.051 (m). The large values
+are the post-landing divergence, not flight error.
+
+**R3. ORB-SLAM3 stereo-inertial** — only on the deprecated matched window,
+which is not a fair or converged window (it contains jumps up to 102 m). **No
+trustworthy ORB-SLAM3 validation numbers exist yet.**
+
+**R4. ORB-SLAM3 stereo-only, forest path A** (full flight; it has no transient):
+amd64 0.030 0.038 0.031 0.037 m (n=4) vs Mac 0.0302 ± 0.0033 m (n=3) — the
+machines agree (§41 results).
+
+**R5. Determinism.** Serial runner: byte-identical state output across runs
+(PASS). Live node under topic replay: one pair diverged up to 2.8 cm, a later
+triple was bit-identical — intermittent (§46–47).
+
+**R6. Joint covariance** (serial run, 281 messages, forest bag 053636; §47):
+rank deficit at `max_eig·1e-12` exactly 6 in all 281; 6th-smallest/max eig
+median 2e-16 vs 7th 4.5e-11; null space = (IMU pose − newest clone) to ≤1.4e-3 deg;
+duplicate-row residual ≤1.2e-13 relative; published after the full update cycle
+in both live and serial nodes. **PASS by those criteria.** Open: a checker sample
+at t=83.956 showed dim 130 / 2.3e-9 where the recorded matrix is dim 132 / 3e-19.
+
+**R7. Fork sanity.** OpenVINS's own simulator on the fork (stock `rpng_sim`,
+296 m): position RMSE 0.046 m, orientation 0.18°, NEES 3.8 (pos) / 0.7 (ori).
+The process segfaults during ROS teardown after finishing; harmless.
+
+**R8. Triangulation diagnosis, forest 053636** (§49): 99% of triangulation
+rejects fail `cond > 1e4` (median condA 1.1e5); MSCKF candidates ~1/update,
+83% rejected, chi2 only 2%. fast_threshold sweep (30→5): cam0 tracked features
+flat at 75–81 — threshold is not the limiter; grid cells never reach their cap.
+
+**R9. Gravity 9.80 vs 9.81, forest path A** (OpenVINS, while it was not working):
+differences ≤ 0.03 m. **Not a valid gravity result** — redo on validation (next steps).
+
+---
+
+## 6. Next steps (decided by the user, in this order)
+
+1. **Enable `try_zupt`, disparity check on** (`zupt_max_disparity` > 0). Log
+   every ZUPT event with ground-truth speed at that instant; confirm **no ZUPT
+   fires while airborne, hover included**. Change it in `gen_d455_sim.py`, record
+   the change in PATCHES. Check `zupt_chi2_multipler: 0` semantics first.
+2. **Replace the evaluation window with a ground-truth window**: from **3 s after
+   takeoff** (GT altitude above a threshold) **until touchdown**, identical for
+   every estimator. Report each estimator's **time-to-usable-estimate**
+   separately. Re-run ORB-SLAM3 *and* OpenVINS on **all validation and forest
+   bags** with this window (ORB-SLAM3 can use the live run's `est_orbslam3.tum`
+   and `gt.tum` in `docker/out/eval/<run>/`; consider replaying it on the bag).
+   The **airborne segment is the primary number.**
+3. **NEES on the same airborne window**, posyaw alignment; report **roll/pitch
+   NEES separately** (independent of yaw alignment). The saved std file gives a
+   diagonal covariance only; `/odomimu` rows carry the full 6x6 but are not
+   deterministic.
+4. **Gravity 9.80 vs 9.81 on all 10 validation bags by replay**
+   (`OV_GRAVITY_MAG=9.80`); report the per-bag difference. Apply the rule:
+   an effect counts only if it replicates across two independent run sets, or
+   confidence intervals do not overlap.
+
+Later / noted, not started:
+- The 130 vs 132 joint-covariance mismatch (checker ran on the serial runner at
+  DEBUG; the recording was at WARNING).
+- Why tracked features plateau at ~78 when no grid cell is saturated.
+- Real D455: apply the same fast_threshold rule; the per-threshold counts are in §48.
+
+---
+
+## 7. Retractions and corrections (do not reuse these numbers)
+
+- **Mac §36 gravity effect (68% / 85%)**: withdrawn by the Mac (§40); full-flight
+  online ATE is not reproducible (two 5-run sets differed 4.9×).
+- **Mac 0.0138 m stereo-only ATE**: a single lucky run; the 3-run value is
+  0.0302 ± 0.0033 m.
+- **"OpenVINS tilt error 8.9° rms / 46° max"** (this host): wrong — compared
+  gravity directions across world frames 180° apart in yaw. Correct value:
+  0.5° rms tilt, 0.7° full rotation.
+- **"30–45 tracked features"**: an eyeball estimate from trackhist; the
+  tracker's own count is ~75–81.
+- **`ov_eval` orientation RMSE 15–33° and all NEES values so far**: artefacts of
+  posyaw alignment fitted to near-stationary or diverged positions. Do not use.
+- **Matched-window (VIBA-2) results for both estimators**: superseded by the GT
+  window decision; ORB-SLAM3's "converged" window contained 2.9–102 m jumps.
+- **"init_imu_thresh default is single-threaded subs"** wording in an early §46
+  draft: corrected in place — the live node forces multi-threaded subscribers.
+- **Determinism "PASS" on empty files** (before the init fix): both outputs were
+  empty; the real PASS is the serial runner (§47).
+
+---
+
+## 8. Open issues
+
+- OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
+- ORB-SLAM3 stereo-inertial is erratic on this rig (jumps after VIBA-2); no fair
+  numbers yet.
+- Simulated cameras are noise-free, blur-free and perfectly calibrated while the
+  IMU is realistically noisy (`docker/OPEN_ISSUES.md` §1) — results favour vision.
+- GPU drops to its P8 idle clock under light Gazebo load (costs ~0.85→0.75 RTF);
+  fixing it needs sudo (locked clocks); not pursued.
+- The OpenVINS joint-covariance checker (`check_joint_cov.py`) uses a 1e-9
+  relative null threshold that over-counts the deficit; relative 1e-12 is the
+  agreed criterion.
+
+---
+
+## 9. Operational gotchas (each one cost time)
+
+- **Never edit a script while it is executing** (bash reads incrementally; this
+  killed a Mac experiment, §37). For scripts a running chain will call later,
+  write a new file and `mv` it into place.
+- `run_experiment.sh` refuses to start if the container's copies of six scripts
+  differ from the host (md5 guard) — rebuild and recreate after edits.
+- `pkill -f '<pattern>'` matches its own shell when the pattern appears in the
+  command line; use the `[x]yz` bracket trick.
+- `docker exec` does not source ROS: wrap with
+  `bash -c "source /opt/ros/jazzy/setup.bash; source /root/ws_offboard_control/install/setup.bash; ..."`.
+  Feeding a script on stdin needs `docker exec -i`.
+- Recreating the sim container wipes its `/tmp` (scratch builds live there).
+- PATCHES section numbers: check the highest `## N.` before adding one.
+- Gazebo camera sensors render only when subscribed; a bare `gz sim -s` without
+  PX4's server config never creates camera topics (§20).
+- Static models are absent from `/world/<w>/dynamic_pose/info`; ground-truth
+  index 0 is the drone in both worlds.
+- OpenVINS `trackhist` images are stamped with wall time, not image time.
