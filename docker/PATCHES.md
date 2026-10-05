@@ -2260,3 +2260,108 @@ set B +0.2 mm, CI [−0.1, +0.4]. Opposite signs, both CIs include 0:
 +0.0005–0.0006 on all 10 bags (replicates in both sets): a real but
 negligible scale effect, about half the 0.1% gravity change. NEES unchanged
 (≤ 2%).
+
+## 54. OpenVINS overconfidence: Gazebo's IMU bias walks 42x faster than configured
+
+**Question.** NEES 30–460 on the GT airborne window (§53) while OpenVINS's
+own simulator gives 3.8. Reprojection error is ~0.1 px against a modelled
+1 px, which alone would make it *under*confident, so the filter trusts
+something else too much. Diagnostics run cheapest first on validation bags
+A 193700, A 194531, B 195913. Scripts: `docker/scripts/s54/` (run from a copy
+in `/out/diag_s54/`), outputs in `docker/out/diag_s54/` and
+`docker/out/replay/*_{calibR,synth_cfg,synth_gz}`. No config was changed.
+
+**Ruled out**
+1. *Config.* The key is `use_fej` (no `do_fej` exists): true, parsed as 1.
+   All `calib_*` false, `timeshift_cam_imu` 0, rk4.
+2. *Online calibration* (`OV_SET` intrinsics/extrinsics/timeoffset on; hook
+   added to `replay_estimator.sh`). Settles near the SDF: f/c within ±0.8 px
+   (cx +1.8 px on 193700, sign varies by bag), distortion ≤ 0.002, extrinsic
+   rotation 0.03–0.3°, translation ≤ 6 mm; cam–IMU dt converges to
+   **+2.08–2.16 ms on all three**. NEES pos/ori: 86/104 → 77/68,
+   30/341 → 18/267, 220/318 → 242/297. Not the cause.
+3. *Projection* (`geom_timing.py`): stereo-triangulated corners moved by GT
+   and reprojected ~100 ms later: median 0.10 px on all bags; stereo row
+   offset p95 ≤ 0.18 px. Cannot separate cx 424 from 423.5 (a shared
+   principal-point shift cancels: 0.0999 vs 0.0996 px).
+4. *Stamp intervals.* Every IMU and image stamp is on the 4 ms physics grid.
+   IMU: 4,4,4,8 ms (mean 5.000 ms); cameras 32/36 ms. One 220 ms IMU gap in
+   194531 at t = 58.3 s, before the window.
+5. *Image stamp vs render pose.* Reprojection is minimised at 0 ms GT offset
+   on all bags (+20% at ±4 ms).
+6. *Frame.* GT is the model pose = base_link origin (PX4 `x500_base` gives
+   base_link no `<pose>`); `ov_prep.py` already moves it to the IMU (0.257 m)
+   before NEES, so position NEES is at the matching point.
+
+**Ground-truth timing caveat.** GT stamps are bag receive time mapped through
+`/clock` (`bag_to_tum.py --time-from-clock`), not sim stamps: median 0.15 ms
+after the 4 ms grid, 1–2% more than 1 ms off. Snapped to the grid for the
+IMU work; a few mis-snaps by one step remain and make second differences of
+GT heavy-tailed, so robust (MAD) statistics are used below.
+
+**IMU vs ground truth** (`imu_vs_gt.py`; no GT differentiation: IMU integrals
+vs GT rotation increments and second divided differences of position, over
+the airborne window)
+- Gyro–GT time offset: best at IMU stamp **−2 ms** on all three bags (the
+  IMU sample describes motion ~2 ms before its stamp; same size as the online
+  cam–IMU dt).
+- Gazebo reports acceleration at the sensor/d455_link point, not base_link
+  (residual much larger with the base_link point): no lever-arm bug.
+- White noise (MAD over ~32 ms spans; white-only expectation acc 0.0126,
+  gyro 0.00118): acc 0.024–0.092, gyro 0.0014–0.0017 per axis — 1.2–1.5x
+  for the gyro, 2–7x for the accelerometer, partly GT timing.
+- **Accelerometer bias vs GT**, median per flight quarter: 0.03–0.24 m/s² per
+  axis, different on every bag, and it **drifts within the flight** (194531 y
+  0.003 → 0.162 m/s² over ~40 s; 195913 x −0.19 → −0.06 → −0.18). The
+  configured random walk (3e-4 m/s²/√s) allows ~0.002 m/s² in 40 s. Gyro bias
+  0.2–2.3e-3 rad/s.
+
+**Cause, from the gz-sensors8 source** (`GaussianNoiseModel.cc:135`):
+
+    sigma_b_d = sqrt(-sigma_b^2 * tau/2 * expm1(-2 dt/tau))  ~= sigma_b * sqrt(dt)
+    bias = exp(-dt/tau) * bias + N(0, sigma_b_d)
+
+`dynamic_bias_stddev` is the **driving density** (steady-state σ is
+σ_b·√(τ/2)), not the steady-state σ that `gen_d455_sim.py` assumes (its
+docstring and lines 134–135 set σ_b = σ_rw·√(τ/2)). Gazebo's actual random
+walk is therefore acc **0.0127 m/s²/√s** (config 3e-4) and gyro
+**8.5e-5 rad/s/√s** (config 2e-6): **42.4x** the configured values. With no
+`bias_mean`/`bias_stddev`, the bias starts at 0 at sim start and has walked
+to σ ≈ 0.0127·√60 ≈ 0.1 m/s² by takeoff — the magnitude measured above.
+A 0.03 m/s² accel bias error is 0.18° of tilt, the observed tilt scatter
+(§53: ~0.2° vs σ 0.03°). §53's statement that the SDF OU bias matches the
+configured random walks is **wrong** (retracted).
+
+**Decisive swap test** (`synth_imu.py`, `run_swap.sh`). The bag's
+`/camera/imu` is replaced by IMU synthesised from GT (snapped stamps with
+leave-one-out mis-snap repair, cubic position spline at the IMU point,
+rotation spline; same stamps, real images untouched). `cfg`: white noise and
+bias walk drawn exactly per the OpenVINS config. `gz`: same, but the bias
+walks at Gazebo's effective density, started from N(0, σ_b²·t).
+The spline signal itself differs from the real accelerometer by MAD
+0.04–0.10 m/s² (white alone is 0.028), so the synthetic IMU carries some
+unmodelled error of its own.
+
+Mean NEES (in-95 fraction), expected pos 3, ori 3, rp 2:
+
+| run | real Gazebo IMU (§53) | synth `cfg` | synth `gz` (control) |
+|---|---|---|---|
+| A 193700 pos / ori / rp | 86 / 104 / 117 | 18.8 / **3.2** / 8.3 | 7.5 / 74 / 82 |
+| A 194531 | 30 / 341 / 460 | 2.5 / **2.7** / 5.6 | 13 / 76 / 74 |
+| B 195913 | 220 / 318 / 364 | 70 / **3.9** / 9.0 | 155 / 249 / 298 |
+| tilt RMSE (deg) | 0.27 / 0.43 / 0.36 | 0.11 / 0.08 / 0.07 | 0.20 / 0.18 / 0.30 |
+
+**Conclusion.** The Gazebo IMU is the cause of the orientation/tilt
+overconfidence: with config-consistent IMU noise orientation NEES is
+2.7–3.9; putting back only the Gazebo-style bias walk restores 74–249.
+Position NEES is only partly explained (2.5 / 19 / 70 with `cfg`);
+the remainder is not attributed — candidates are the synthetic signal's own
+spline error, the diagonal-only covariance and posyaw alignment. Roll/pitch
+NEES (5.6–9.0) remains above 2 with `cfg`, same caveat.
+
+**Not done (fix candidates, need a decision):** (a) regenerate the SDF with
+σ_b = σ_rw (so Gazebo walks at the configured rate) and re-record; or
+(b) keep the bags and set OpenVINS's random walks to Gazebo's effective
+values (acc 0.0127, gyro 8.5e-5) for a replay. (a) keeps the simulated IMU
+D455-like; (b) needs no new flights. The −2 ms IMU stamp lag is a separate,
+smaller effect and is not addressed.

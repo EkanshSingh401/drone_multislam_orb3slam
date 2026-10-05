@@ -89,6 +89,24 @@ if [[ "${EST}" == "openvins_serial" ]]; then
         grep -qx "gravity_mag: ${OV_GRAVITY_MAG}" "${OV_CFG_DIR}/openvins_estimator_config.yaml" \
             || { echo "replay: failed to set gravity_mag=${OV_GRAVITY_MAG}" >&2; exit 2; }
     fi
+    # OV_CXCY="cx cy": principal point override for BOTH cameras in the copied
+    # kalibr_imucam_chain.yaml -- a diagnostic replay (PATCHES s54), asserted.
+    if [[ -n "${OV_CXCY:-}" ]]; then
+        read -r CX CY <<< "${OV_CXCY}"
+        sed -i -E "s|^(  intrinsics: \[[^,]+, [^,]+, )[^,]+, [^]]+\]|\1${CX}, ${CY}]|" "${OV_CFG_DIR}/kalibr_imucam_chain.yaml"
+        [[ $(grep -c "intrinsics: .*, ${CX}, ${CY}\]" "${OV_CFG_DIR}/kalibr_imucam_chain.yaml") -eq 2 ]] \
+            || { echo "replay: failed to set cx/cy=${OV_CXCY}" >&2; exit 2; }
+        log "OV_CXCY $(grep 'intrinsics:' "${OV_CFG_DIR}/kalibr_imucam_chain.yaml" | tr '\n' ' ')"
+    fi
+    # OV_SET="key=value key=value": override top-level estimator keys for a
+    # diagnostic replay (PATCHES s54); each edit is asserted like gravity_mag.
+    for kv in ${OV_SET:-}; do
+        k="${kv%%=*}"; v="${kv#*=}"
+        sed -i -E "s|^${k}:.*|${k}: ${v}|" "${OV_CFG_DIR}/openvins_estimator_config.yaml"
+        grep -qx "${k}: ${v}" "${OV_CFG_DIR}/openvins_estimator_config.yaml" \
+            || { echo "replay: failed to set ${k}=${v}" >&2; exit 2; }
+        log "OV_SET ${k}: ${v}"
+    done
     hr; log "OpenVINS SERIAL $(grep -E '^gravity_mag:' "${OV_CFG_DIR}/openvins_estimator_config.yaml")"
     # DEBUG for the per-frame "[TIME] ... seconds for tracking" lines, which are
     # how frames processed is counted (same as the topic path).

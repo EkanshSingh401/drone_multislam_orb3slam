@@ -11,7 +11,7 @@ evidence; this file is the summary.
 
 | | |
 |---|---|
-| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ `4b0a691` (pushed). `amd64-gpu` points at the same commit. History is linear on top of the Mac's final commit `4624988`. |
+| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ `a847b00` (pushed; PATCHES §50–53). `amd64-gpu` no longer tracks it (local `68c013b`, origin `ad9b259`). History is linear on top of the Mac's final commit `4624988`. |
 | OpenVINS fork | `EkanshSingh401/open_vins`, branch `openvins-integration` @ **`5b14b93`** (pushed), pinned by commit in `docker/sim/Dockerfile` (`OPEN_VINS_COMMIT`). |
 | Other forks | `active_slam_msgs` `a0790aa`, `active_slam_planner` `f56e114`, `active_slam_information` `e225068` (pinned in the Dockerfile). |
 | Who runs experiments | **This host only.** The Mac is retired from experiments. |
@@ -246,8 +246,11 @@ Later / noted, not started:
 - OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
 - **OpenVINS covariance is overconfident** (PATCHES §53): NEES 30–460 on the
   GT airborne window (expected 2–3); vertical σ ~2 mm vs ~2–3 cm error, tilt σ
-  ~0.03° vs ~0.2°. Timing, GT association, mounting bias and IMU noise config
-  ruled out; cause open.
+  ~0.03° vs ~0.2°. **Cause found (§54)**: gz-sensors treats
+  `dynamic_bias_stddev` as a random-walk density, so the simulated IMU bias walks
+  42x faster than OpenVINS's configured random walk. GT-synthesised IMU with
+  config noise gives ori NEES 2.7–3.9; position NEES only partly recovers.
+  Fix (regenerate SDF vs retune OpenVINS) not yet chosen.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
