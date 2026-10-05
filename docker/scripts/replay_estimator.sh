@@ -227,8 +227,16 @@ sleep 4
 # ---------------------------------------------------------------------------
 # 4. Play the bag at its recorded rate.
 # ---------------------------------------------------------------------------
-hr; log "playing bag (normal rate; /clock comes from the bag)"
-ros2 bag play "${BAG}" 2>&1 | tee "${OUTDIR}/bag_play.log" || true
+# PLAY_RATE (default 1.0) slows playback so the estimator keeps up (PATCHES s52).
+# The input bag also carries the LIVE run's /robot_pose_slam; playing it would
+# put the live estimate on the topic recorded as the replayed one, so play an
+# explicit list of sensor / truth / clock topics only.
+hr; log "playing bag (rate ${PLAY_RATE:-1.0}; /clock comes from the bag)"
+ros2 bag play "${BAG}" --rate "${PLAY_RATE:-1.0}" --topics \
+    /camera/imu /camera/infra1/image_rect_raw /camera/infra2/image_rect_raw \
+    /camera/infra1/camera_info /camera/infra2/camera_info \
+    /clock /ground_truth/pose_info /tf_static \
+    2>&1 | tee "${OUTDIR}/bag_play.log" || true
 log "playback finished"
 sleep 5
 
@@ -255,6 +263,12 @@ stop_pid "${OVREC_PID}" "ov_pose_to_file"
 stop_pid "${EST_PID}" "estimator"
 pkill -TERM -f "run_subscribe_msckf|orb_slam3_ros2_wrapper/(stereo_inertial|stereo)" 2>/dev/null || true
 sleep 3
+# The ORB-SLAM3 node's rclcpp INFO lines (clock beacons with its frame counter)
+# do not reliably reach the launch stdout; its own ROS log file has them.
+if [[ -z "${OVREC_PID}" ]]; then
+    NODELOG=$(ls -t "${HOME}"/.ros/log/stereo*_*.log 2>/dev/null | head -1 || true)
+    [[ -n "${NODELOG}" ]] && cp "${NODELOG}" "${OUTDIR}/node.log"
+fi
 if [[ ! -f "${OUTDIR}/out.bag/metadata.yaml" ]]; then
     log "no metadata.yaml, reindexing output bag"
     ros2 bag reindex "${OUTDIR}/out.bag" -s mcap >/dev/null 2>&1 || true

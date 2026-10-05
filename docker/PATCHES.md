@@ -2144,3 +2144,54 @@ not a *usable* (metric) estimate — Sim(3) scales of 0.01–0.85 show the onlin
 trajectory carries pre-IMU-init / map-reset segments. A usable-time definition
 for ORB-SLAM3 (e.g. first time after which ATE on a trailing span stays below a
 bound, or VIBA-2) is still open, as is replaying ORB-SLAM3 on the bags.
+
+## 52. ORB-SLAM3 replayed on the validation bags: stereo-only cm-level, stereo-inertial broken by the IMU path
+
+**Tooling.** `ORB_SLAM3/src/Tracking.cc` prints `[ORBEV]` lines stamped with
+frame (sim) time on any change of active map / IMU init / VIBA 1 / VIBA 2 /
+tracking state, on every active-map reset, and `frames=N` every 100 frames
+(no behaviour change). `replay_estimator.sh`: `PLAY_RATE` (`ros2 bag play
+--rate`); plays an explicit topic list because the input bags also carry the
+LIVE `/robot_pose_slam`; copies the node's ROS log (`node.log`; its INFO lines
+do not reach the launch stdout). `cam_stamps.py` (bag image stamps),
+`orb_events.py` (report), `phase3_orbslam3.sh` (driver). Rate 0.5.
+Raw: `docker/out/replay/orb_replay_s52.jsonl`, dirs `replay/<run>_orb_{st,si}_r0.5/`.
+
+Definitions: usable time = IMU init completion inside the final map segment
+(no reset or map change after it), relative to GT takeoff; stereo-only = start
+of its final segment. ATE (SE(3)) on the §51 GT window, and on
+[usable, touchdown]. Frames missing = bag images up to the last counter line −
+frames reaching Track() − resets.
+
+| run | flight s | ST ATE GT win | SI resets (rel. takeoff, s) | SI IMU init / VIBA1 / VIBA2 (final seg) | SI usable | SI ATE GT win / scale | SI ATE usable / scale |
+|---|---|---|---|---|---|---|---|
+| A 193700 | 43.5 | 0.012 | −5.1, −2.1 | 0.4 / 3.5 / 16.1 | 0.4 | 9.65 / 0.07 | 10.07 / 0.07 |
+| A 194115 | 43.4 | 0.008 | −2.5, **10.7** | 13.1 / 17.9 / 31.9 | 13.1 | 5.30 / 0.19 | 5.67 / 0.22 |
+| A 194531 | 43.3 | 0.013 | −3.1 | −0.6 / 5.4 / 19.9 | −0.6 | 16.89 / 0.04 | 17.14 / 0.04 |
+| A 195005 | 43.3 | 0.012 | none | 2.4 / 5.1 / 19.9 | 2.4 | 7.44 / 0.10 | 7.46 / 0.10 |
+| A 195439 | 43.6 | 0.012 | −4.4 | −1.9 / 5.3 / 25.4 | −1.9 | 0.68 / 0.88 | 0.68 / 0.87 |
+| B 195913 | 170.0 | 0.010 | −2.4, **8.2** | 10.7 / 17.5 / 30.5 | 10.7 | 90.5 / 0.00 | 81.2 / 0.00 |
+| B 200912 | 170.0 | 0.009 | **14** (−3.6 … 124.0) | 126.4 / 129.4 / 143.4 | 126.4 | 43.8 / 0.01 | 57.5 / 0.02 |
+| B 201905 | 169.9 | 0.010 | none | 2.5 / 10.0 / 25.6 | 2.5 | 17.85 / 0.03 | 18.00 / 0.02 |
+| B 202940 | 169.8 | 0.009 | none | 2.4 / 10.1 / 24.3 | 2.4 | 13.15 / 0.05 | 13.29 / 0.05 |
+| B 204137 | 169.8 | 0.010 | −6.3, −0.3 | 2.2 / 10.4 / 23.6 | 2.2 | 20.88 / 0.02 | 21.19 / 0.02 |
+
+- **Stereo-only: 0.7–1.3 cm on all 10 bags, scale 1.00**, frames missing 0–2.
+  Scene and camera config are fine.
+- Stereo-inertial: frames missing 0–8 (negligible). Resets on the ground
+  ("Not enough motion for initializing") are normal for a stationary start.
+  **The flights are long enough**: VIBA 2 completes on every bag (16–32 s after
+  takeoff, except 200912 with 14 resets). Yet ATE over the usable segment
+  (IMU-initialised, no further reset) is 0.7–81 m with scale 0.00–0.88: the
+  inertial solution is wrong after a nominally successful init. Since vision
+  alone is cm-level on the same frames, the fault is in the IMU path
+  (data handling, IMU noise/extrinsics config, or units), not the scene.
+- Not deterministic: 193700 SI gave different reset histories in three replays.
+- Wrapper IMU path **ruled out**: the stereo-inertial node now reports on its
+  clock beacon `imu_gaps` (consecutive drained samples > 10 ms apart),
+  `imu_late` (sample stamped at/before the previous frame, i.e. preintegrated
+  into the wrong interval) and `imu_maxgap`. Replay of 195005 at rate 0.5:
+  **0 gaps, 0 late over 2197 frames**. The IMU data reach ORB-SLAM3 complete
+  and in order, so the remaining suspects are ORB-SLAM3's inertial settings
+  (`orbslam3_d455_stereo_inertial.yaml`: Tbc, IMU noise, frequency, units/axes)
+  -- open, not investigated yet.

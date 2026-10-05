@@ -1818,6 +1818,33 @@ void Tracking::Track()
         cout << "ERROR: There is not an active map in the atlas" << endl;
     }
 
+    // [ORBEV] phase-3 instrumentation (no behaviour change): one line, stamped
+    // with the frame's (simulation) time, whenever the active map, its IMU
+    // init / VIBA 1 / VIBA 2 flags or the tracking state change.
+    {
+        // Frame counter for the dropped-frame check: frames reaching Track(),
+        // printed every 100 frames with the frame time.
+        static unsigned long ev_frames = 0;
+        if(++ev_frames % 100 == 0)
+        {
+            printf("[ORBEV] frames=%lu t=%.6f\n", ev_frames, mCurrentFrame.mTimeStamp);
+            fflush(stdout);
+        }
+    }
+    if(pCurrentMap)
+    {
+        static long ev_map = -2; static int ev_imu = -1, ev_ba1 = -1, ev_ba2 = -1, ev_state = -99;
+        long m = (long)pCurrentMap->GetId();
+        int imu = pCurrentMap->isImuInitialized(), b1 = pCurrentMap->GetIniertialBA1(), b2 = pCurrentMap->GetIniertialBA2();
+        if(m != ev_map || imu != ev_imu || b1 != ev_ba1 || b2 != ev_ba2 || (int)mState != ev_state)
+        {
+            printf("[ORBEV] t=%.6f map=%ld imu=%d ba1=%d ba2=%d state=%d kfs=%lu\n", mCurrentFrame.mTimeStamp, m, imu, b1, b2,
+                   (int)mState, (unsigned long)pCurrentMap->KeyFramesInMap());
+            fflush(stdout);
+            ev_map = m; ev_imu = imu; ev_ba1 = b1; ev_ba2 = b2; ev_state = (int)mState;
+        }
+    }
+
     if(mState!=NO_IMAGES_YET)
     {
         if(mLastFrame.mTimeStamp>mCurrentFrame.mTimeStamp)
@@ -3879,6 +3906,12 @@ void Tracking::Reset(bool bLocMap)
 
 void Tracking::ResetActiveMap(bool bLocMap)
 {
+    if(mpAtlas->GetCurrentMap())
+    {
+        printf("[ORBEV] reset t=%.6f map=%ld kfs=%lu\n", mCurrentFrame.mTimeStamp, (long)mpAtlas->GetCurrentMap()->GetId(),
+               (unsigned long)mpAtlas->GetCurrentMap()->KeyFramesInMap());
+        fflush(stdout);
+    }
     Verbose::PrintMess("Active map Reseting", Verbose::VERBOSITY_NORMAL);
     if(mpViewer)
     {

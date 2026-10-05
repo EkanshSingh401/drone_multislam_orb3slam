@@ -61,6 +61,8 @@ namespace ORB_SLAM3_Wrapper
         double firstFrameStamp_{-1.0};
         double imuInitStamp_{-1.0};
         std::size_t frameCount_{0};
+        std::size_t imuGaps_{0}, imuLate_{0};
+        double imuMaxGap_{0.0};
         std::size_t imuSampleCount_{0};
         double lastFrameStamp_{-1.0};
         // Sim time of the last wall<->sim clock beacon; see StereoCallback.

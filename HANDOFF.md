@@ -248,8 +248,12 @@ Later / noted, not started:
   (airborne accepts on all 10 validation bags, PATCHES §50). For hardware,
   gate ZUPT on PX4's landed state (`vehicle_land_detected`) instead of image
   disparity.
-- ORB-SLAM3 stereo-inertial is erratic on this rig (jumps after VIBA-2); no fair
-  numbers yet.
+- ORB-SLAM3 stereo-inertial is broken on this rig (PATCHES §52): replayed on
+  the validation bags, stereo-only is 0.7–1.3 cm but stereo-inertial is
+  0.7–90 m with Sim(3) scale 0.00–0.88 even after IMU init + VIBA 2 with no
+  later reset. IMU delivery verified clean (0 gaps / 0 late). Next suspect:
+  `orbslam3_d455_stereo_inertial.yaml` (Tbc, noise, units/axes).
+  Replay with `PLAY_RATE=0.5 ./docker/scripts/phase3_orbslam3.sh <exp> [si|st|both]`.
 - Simulated cameras are noise-free, blur-free and perfectly calibrated while the
   IMU is realistically noisy (`docker/OPEN_ISSUES.md` §1) — results favour vision.
 - GPU drops to its P8 idle clock under light Gazebo load (costs ~0.85→0.75 RTF);

@@ -113,6 +113,23 @@ namespace ORB_SLAM3_Wrapper
             }
         }
 
+        // IMU stream check (PATCHES s52): a gap between consecutive drained
+        // samples > 10 ms (2 periods at 200 Hz) means samples never arrived
+        // (best-effort QoS drop); a sample stamped at or before the PREVIOUS
+        // frame arrived too late and is preintegrated into the wrong interval.
+        {
+            static double lastImuT = -1.0, prevFrameT = -1.0, maxGap = 0.0;
+            static size_t gaps = 0, late = 0;
+            for (const auto &p : vImuMeas)
+            {
+                if (lastImuT >= 0.0 && p.t - lastImuT > 0.010) { ++gaps; maxGap = std::max(maxGap, p.t - lastImuT); }
+                if (prevFrameT >= 0.0 && p.t <= prevFrameT) ++late;
+                lastImuT = p.t;
+            }
+            prevFrameT = tFrame;
+            imuGaps_ = gaps; imuLate_ = late; imuMaxGap_ = maxGap;
+        }
+
         if (vImuMeas.empty())
         {
             // Normal exactly once, for the first frame (nothing precedes it).
@@ -152,8 +169,8 @@ namespace ORB_SLAM3_Wrapper
         if (tFrame - lastBeaconStamp_ >= 2.0)
         {
             lastBeaconStamp_ = tFrame;
-            RCLCPP_INFO(this->get_logger(), "clock beacon: sim_t=%.6f frame=%zu",
-                        tFrame, frameCount_);
+            RCLCPP_INFO(this->get_logger(), "clock beacon: sim_t=%.6f frame=%zu imu_gaps=%zu imu_late=%zu imu_maxgap=%.4f",
+                        tFrame, frameCount_, imuGaps_, imuLate_, imuMaxGap_);
         }
 
         auto Tcw = interface()->slam()->TrackStereo(cvLeft->image, cvRight->image,
