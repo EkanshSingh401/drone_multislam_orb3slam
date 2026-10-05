@@ -244,6 +244,12 @@ Later / noted, not started:
 ## 8. Open issues
 
 - OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
+- **OpenVINS covariance is overconfident** (PATCHES §53): NEES 30–460 on the
+  GT airborne window (expected 2–3); vertical σ ~2 mm vs ~2–3 cm error, tilt σ
+  ~0.03° vs ~0.2°. Timing, GT association, mounting bias and IMU noise config
+  ruled out; cause open.
+- Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
+  scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
   (airborne accepts on all 10 validation bags, PATCHES §50). For hardware,
   gate ZUPT on PX4's landed state (`vehicle_land_detected`) instead of image
