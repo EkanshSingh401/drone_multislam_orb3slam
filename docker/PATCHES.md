@@ -2567,3 +2567,69 @@ slow / low-rotation segments (both scenes) and, in the forest only, when more
 features are tracked. The between-scene gap is real (median segment ori NEES
 forest 6.7 vs validation 3.2; median attempt depth 8.5 vs 4.2 m) but is not
 explained by depth variation inside the forest. Nothing changed.
+
+## 58. Basalt stereo-inertial baseline; frame-rate test of correlated measurement error
+
+**Basalt replaces ORB-SLAM3 stereo-inertial as the second VIO.** Basalt 0.1.7
+upstream binary (`basalt-0.1.7-x86_64-unknown-linux-gnu`, built on Ubuntu
+22.04 = this host; sha256 8ab56b2a…6d24 verified), run ROS-free on the host
+from `docker/out/tools/basalt/release`. Pipeline (`basalt_export.py` in the sim
+container, then `basalt_vio`, then `s58/basalt_score.sh`):
+- **Data**: EuRoC/ASL export of `flight.bag` (the §56 stamp-corrected bags):
+  stereo pairs = identical cam0/cam1 header stamps (as the OpenVINS serial
+  runner pairs them), PNG, `imu0/data.csv` at the corrected stamps.
+- **Calibration** read from the generated `/opt/config_sim_only` files, not
+  re-typed: `T_imu_cam = inv(T_cam_imu)` (cam0 p = (0.00552, 0.0424, 0.01174),
+  identical to ORB-SLAM3's `T_b_c1`), `pinhole` fx fy cx cy, zero distortion,
+  `cam_time_offset_ns` = timeshift 0.
+- **IMU noise**: Basalt's `*_noise_std` / `*_bias_std` are continuous-time
+  (basalt-headers `calibration.hpp`: σ_d = σ_c·√rate), the Kalibr convention,
+  so copied 1:1: accel 2e-3, gyro 1.6e-4, accel RW 3e-4, gyro RW 2e-6, 200 Hz.
+  Logged per run in `docker/out/basalt/<run>/calib_conversion.txt`. (PyYAML
+  reads `2e-06` as a string; the exporter casts explicitly.)
+- **Config**: stock `data/euroc_config.json`, no tuning. GUI off, 8 threads.
+- **Scoring**: Basalt's TUM trajectory is the IMU pose; moved to base_link
+  with ov_prep's lever arm; `gt_window_eval.py` (§51 window, identical for
+  every estimator).
+
+Frames consumed (trajectory poses) == stereo pairs in the bag on **all 20**
+runs (e.g. 2229/2229, 6046/6046). GT-window ATE (`docker/out/basalt/all.jsonl`):
+
+| set | Basalt ATE (m) | Basalt Sim(3) | OpenVINS ATE (§56) |
+|---|---|---|---|
+| validation A | 0.035 0.034 0.035 0.032 0.031 | 1.011–1.013 | 0.008–0.013 |
+| validation B | 0.068 0.063 0.064 0.068 0.068 | 1.012–1.014 | 0.020–0.029 |
+| forest A | 0.042 0.047 0.055 0.056 0.054 | 1.004–1.016 | 0.032–0.064 |
+| forest B | 0.151 0.158 0.160 0.175 0.188 | 1.014–1.022 | 0.068–0.136 |
+
+Credible stereo-inertial baseline (cm-level everywhere, no failures, very low
+run-to-run spread). Basalt's Sim(3) scale is > 1 on every bag (+0.4 to +2.2%):
+a systematic, not investigated. Exported datasets kept (~50 GB in
+`docker/out/basalt/`).
+
+**Hypothesis: temporally correlated measurement error counted as independent.**
+Diagnostic replays of all 20 bags with `OV_SET track_frequency=15` and `=10`
+(not kept; baseline = §56 run, all 30 Hz frames). Segments classified per state
+by GT angular speed (1 s median) against the scene median (0.053 / 0.051 rad/s).
+Mean diag NEES across runs:
+
+| scene | rate | frames/run | ori slow | ori fast | rp slow | rp fast | ATE mean (m) |
+|---|---|---|---|---|---|---|---|
+| validation | 30 Hz | all | 5.9 | 1.5 | 10.1 | 2.3 | 0.017 |
+| validation | 15 Hz | ~1550 | 2.2 | 0.8 | 3.8 | 1.2 | 0.014 |
+| validation | 10 Hz | ~1030 | 1.7 | 0.6 | 3.5 | 1.0 | 0.016 |
+| forest | 30 Hz | all | 13.5 | 5.9 | 26.1 | 8.2 | 0.071 |
+| forest | 15 Hz | ~1530 | 4.0 | 1.5 | 7.4 | 2.3 | 0.030 |
+| forest | 10 Hz | ~1020 | 2.4 | 1.1 | 4.4 | 1.8 | 0.031 |
+
+Reading. Lowering the frame rate removes most of the overconfidence: at 15 Hz
+orientation NEES is near or below 3 everywhere except forest-slow (4.0), and
+forest ATE improves 0.071 → 0.030 m. That fits correlated per-frame errors
+being counted as independent information. **But the drop is not
+concentrated in slow segments in relative terms**: slow/fast NEES ratio
+validation 3.9 → 2.8 → 2.8, forest 2.3 → 2.7 → 2.2. Slow segments drop more
+in absolute NEES only because they start higher. So the frame-rate effect
+supports the correlated-error explanation for the overall level, but does not
+by itself explain why slow motion is worse; the hypothesis as stated
+(NEES drops MOST in slow segments) is only partly supported. Fast segments
+become underconfident (NEES < 3) at 15–10 Hz.

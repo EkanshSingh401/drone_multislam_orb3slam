@@ -36,7 +36,9 @@ OpenVINS still **diverges after touchdown** when stationary (no parallax, ZUPT
 off; §50). ORB-SLAM3 **stereo-inertial is broken** on this rig on every bag,
 before and after the IMU bias fix (§52, §55; not re-run after the §56 stamp
 fix), while stereo-only is cm-level. A time-boxed config pass (§56) found no
-error; a VINS-Fusion baseline is under consideration.
+error. **Basalt** (upstream binary, ROS-free, stock EuRoC config; §58) is the
+replacement stereo-inertial baseline: GT-window ATE validation 3–7 cm, forest
+4–19 cm, all frames consumed.
 
 ---
 
@@ -277,7 +279,10 @@ Later / noted, not started:
 ## 8. Open issues
 
 - OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
-- **OpenVINS orientation NEES** after the bias (§55) and stamp (§56) fixes:
+- **OpenVINS orientation NEES** after the bias (§55) and stamp (§56) fixes (§58:
+  falls to ≲3 at track_frequency 15 Hz, and forest ATE improves 7.1 → 3.0 cm,
+  consistent with correlated per-frame errors counted as independent; setting not
+  adopted yet):
   full-covariance 3.7–7.8 validation, 11–27 forest (expected 3); roll/pitch
   4–19 / 15–61 (expected 2). Residual unattributed. Use full-covariance NEES
   (`docker/scripts/s54/run_fullcov.sh`); the diagonal understates orientation.
