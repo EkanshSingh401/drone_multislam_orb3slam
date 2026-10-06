@@ -2633,3 +2633,58 @@ supports the correlated-error explanation for the overall level, but does not
 by itself explain why slow motion is worse; the hypothesis as stated
 (NEES drops MOST in slow segments) is only partly supported. Fast segments
 become underconfident (NEES < 3) at 15–10 Hz.
+
+## 59. OpenVINS tracks every other frame (adopted), held-out confirmation, Basalt scale check
+
+**Correction to §58's labels.** OpenVINS drops a stereo pair arriving
+< 1/track_frequency after the last ACCEPTED one. On Gazebo's 32/36 ms gaps,
+`track_frequency: 15` (66.7 ms) takes every 2nd or 3rd frame: ~1550 of ~2200
+frames, an irregular ~21 Hz, not 15 Hz. §58's "15 Hz" rows are that setting.
+
+**Adopted: every other frame, `track_frequency: 20.0`** (`gen_d455_sim.py`
+`OV_TRACK_FREQUENCY_HZ`, `TRACK_DECIMATION = 2`). Exactly-every-other needs
+max single gap < 1/tf ≤ min double gap: sim 36 < 50 ≤ 64 ms, real 30 Hz D455
+33.3 < 50 ≤ 66.7 ms. `--verify` checks this bound (replacing the old
+"tf > 1/min gap" check). Effective rate 15.2 Hz in sim, 15 Hz on the D455.
+Justification: consistency (§58) and compute headroom on the Jetson.
+
+**Held-out confirmation** (6 flights recorded after the decision, untouched by
+any tuning; path A; `experiment_d455_pathA_validation_20261006-185955`
+230119 230613 231052, `experiment_d455_pathA_20261006-191429` 231552 232057
+232529; IMU stamps corrected at source). "all 30" = `track_frequency=40.0`
+(every frame, the previous default and the setting comparable to Basalt).
+
+| run | OpenVINS | frames | ATE (m) | ori NEES diag / full | rp diag / full |
+|---|---|---|---|---|---|
+| val 230119 | every other | 1112 | 0.011 | 2.0 / 3.6 | 2.1 / 4.5 |
+| | all 30 Hz | 2224 | 0.017 | 4.1 / 6.9 | 4.8 / 8.8 |
+| val 230613 | every other | 1110 | 0.011 | 1.5 / 2.3 | 4.0 / 6.0 |
+| | all 30 Hz | 2220 | 0.012 | 2.4 / 4.0 | 6.1 / 11.1 |
+| val 231052 | every other | 1107 | 0.011 | 1.6 / 2.6 | 3.4 / 6.3 |
+| | all 30 Hz | 2214 | 0.013 | 3.6 / 5.6 | 8.0 / 14.8 |
+| forest 231552 | every other | 1093 | 0.021 | 3.0 / 5.1 | 5.8 / 11.3 |
+| | all 30 Hz | 2185 | 0.096 | 4.1 / 7.2 | 10.4 / 15.8 |
+| forest 232057 | every other | 1090 | 0.020 | 1.6 / 2.7 | 4.1 / 7.0 |
+| | all 30 Hz | 2180 | 0.072 | 10.0 / 13.6 | 22.8 / 32.6 |
+| forest 232529 | every other | 1083 | 0.020 | 7.8 / 10.6 | 7.9 / 12.4 |
+| | all 30 Hz | 2166 | 0.056 | 5.0 / 7.0 | 12.8 / 17.9 |
+
+Every other frame is better on ATE on 6/6 (validation 1.1 vs 1.2–1.7 cm;
+forest 2.0–2.1 vs 5.6–9.6 cm) and lower in orientation NEES on 5/6 (exception:
+forest 232529, ori 7.8 vs 5.0 diag, though its rp NEES still drops). Frames
+processed are exactly half (1112/2224 etc.). Confirmed; adopted.
+
+Basalt on the same 6 (all frames consumed, 2224/2224 etc.): ATE validation
+0.031 0.036 0.035, forest 0.049 0.046 0.050 m; Sim(3) 1.009–1.017.
+
+**Basalt scale check.** Exported calibration is `pinhole` with our fx fy cx
+cy (not a fisheye default), `cam_time_offset_ns` 0. That Basalt honours it was
+tested by re-running 194208 with fx, fy x1.02: ATE 0.035 → 0.047 m, Sim(3)
+1.013 → 1.009 (output changes; the true intrinsics fit best). No config
+mismatch, so no fix; the +0.4–2.2% scale is internal to Basalt.
+
+**Housekeeping.** Basalt EuRoC exports (17 GB, not the 50 GB estimated)
+deleted after archiving everything needed to reproduce §58/§59:
+`docker/out/basalt/results_s58.tgz`, `results_s59_heldout.tgz` (trajectories,
+base_link TUMs, calibration + conversion logs, frame counts, logs, scores).
+Images are regenerable with `basalt_export.py` from the bags.

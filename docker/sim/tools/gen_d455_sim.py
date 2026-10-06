@@ -110,6 +110,19 @@ GRAVITY_MAG = 9.81
 PHYSICS_STEP_S = 0.004
 MIN_FRAME_GAP_S = math.floor((1.0 / IMG_RATE_HZ) / PHYSICS_STEP_S) * PHYSICS_STEP_S
 MIN_TRACK_FREQ_HZ = 1.0 / MIN_FRAME_GAP_S
+MAX_FRAME_GAP_S = math.ceil((1.0 / IMG_RATE_HZ) / PHYSICS_STEP_S) * PHYSICS_STEP_S
+
+# OpenVINS tracks EVERY OTHER stereo frame (PATCHES s59): at 30 Hz it treats
+# temporally correlated per-frame errors as independent and is overconfident
+# (s58), and half the frame rate also buys compute headroom on the Jetson.
+# ROS2Visualizer drops a pair arriving < 1/track_frequency after the last
+# ACCEPTED one, so "every other frame" exactly needs
+#     max single gap  <  1/track_frequency  <=  min double gap
+# sim: 36 ms < x <= 64 ms; real D455 at 30 Hz: 33.3 ms < x <= 66.7 ms.
+# 20 Hz (50 ms) satisfies both. (15 Hz = 66.7 ms does NOT: on Gazebo's 32/36 ms
+# gaps it takes every 2nd or 3rd frame, ~21 Hz irregular -- s58's "15 Hz" runs.)
+TRACK_DECIMATION = 2
+OV_TRACK_FREQUENCY_HZ = 20.0
 
 # Gazebo stamps an IMU sample with the END of its physics step, but the gyro
 # describes the middle of that step: measured lag 1.89-1.96 ms, constant over
@@ -749,7 +762,8 @@ def gen_openvins_estimator_config(d: dict) -> str:
             compares trajectories in UNALIGNED frames, so NEES has to be
             computed afterwards by ov_eval with posyaw alignment.
 
-      track_frequency  31.0 -> 40.0, and the value is MEASURED, not guessed.
+      track_frequency  (superseded by s59: now 20.0 = every other frame; see
+            OV_TRACK_FREQUENCY_HZ.) Original note: 31.0 -> 40.0, and the value is MEASURED, not guessed.
             ROS2Visualizer.cpp:565-568 drops a stereo pair when
                 timestamp < camera_last_timestamp + 1/track_frequency
             and returns BEFORE updating camera_last_timestamp, with no log line.
@@ -867,10 +881,11 @@ grid_x: 5
 grid_y: 5
 min_px_dist: 15
 knn_ratio: 0.70
-# Must EXCEED 1/min_inter_frame_gap = 31.250 Hz (measured: min gap 32.000 ms),
-# NOT merely the {IMG_RATE_HZ:g} Hz average -- see the docstring. Frames arriving
-# sooner than 1/track_frequency are dropped silently.
-track_frequency: 40.0
+# Every OTHER stereo frame (PATCHES s59): 1/track_frequency must lie strictly
+# above the longest single frame gap ({MAX_FRAME_GAP_S*1e3:.0f} ms) and at or below the
+# shortest double gap ({2*MIN_FRAME_GAP_S*1e3:.0f} ms); on a real 30 Hz D455, 33.3 / 66.7 ms.
+# Frames arriving sooner than 1/track_frequency are dropped silently.
+track_frequency: {OV_TRACK_FREQUENCY_HZ:.1f}
 downsample_cameras: false
 num_opencv_threads: 4
 histogram_method: "HISTOGRAM"
@@ -1058,9 +1073,9 @@ def verify_consistency(root: Path) -> int:
             # frames-processed == frames-published check.
             # The bound is 1/min_inter_frame_gap, NOT the average rate. Checking
             # against the average would pass 31.0, which drops every other frame.
-            ("track_frequency above 1/min_frame_gap (not just the avg rate)",
-             tf is not None and tf > MIN_TRACK_FREQ_HZ,
-             f"{tf} > {MIN_TRACK_FREQ_HZ:.3f} (gap {MIN_FRAME_GAP_S*1e3:.1f} ms)"),
+            ("track_frequency decimates by exactly 2 (s59): max gap < 1/tf <= 2*min gap",
+             tf is not None and MAX_FRAME_GAP_S < 1.0 / tf <= 2 * MIN_FRAME_GAP_S + 1e-12,
+             f"{MAX_FRAME_GAP_S*1e3:.1f} ms < {1e3/tf if tf else float('nan'):.1f} ms <= {2*MIN_FRAME_GAP_S*1e3:.1f} ms"),
             ("calib_cam_extrinsics frozen",
              "calib_cam_extrinsics: false" in est, ""),
             ("calib_cam_intrinsics frozen",

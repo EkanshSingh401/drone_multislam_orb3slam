@@ -97,10 +97,11 @@ grid_x: 5
 grid_y: 5
 min_px_dist: 15
 knn_ratio: 0.70
-# Must EXCEED 1/min_inter_frame_gap = 31.250 Hz (measured: min gap 32.000 ms),
-# NOT merely the 30 Hz average -- see the docstring. Frames arriving
-# sooner than 1/track_frequency are dropped silently.
-track_frequency: 40.0
+# Every OTHER stereo frame (PATCHES s59): 1/track_frequency must lie strictly
+# above the longest single frame gap (36 ms) and at or below the
+# shortest double gap (64 ms); on a real 30 Hz D455, 33.3 / 66.7 ms.
+# Frames arriving sooner than 1/track_frequency are dropped silently.
+track_frequency: 20.0
 downsample_cameras: false
 num_opencv_threads: 4
 histogram_method: "HISTOGRAM"

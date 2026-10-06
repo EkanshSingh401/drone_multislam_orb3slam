@@ -40,6 +40,17 @@ error. **Basalt** (upstream binary, ROS-free, stock EuRoC config; §58) is the
 replacement stereo-inertial baseline: GT-window ATE validation 3–7 cm, forest
 4–19 cm, all frames consumed.
 
+**Comparison convention (§59).** OpenVINS is reported at two settings,
+always labelled: **OpenVINS (all frames, 30 Hz)**, the default comparable to
+Basalt, and **OpenVINS (every other frame, 15 Hz)**, our system setting
+(`track_frequency: 20.0`). Held-out flights (§59), GT-window ATE:
+
+| | validation (3) | forest (3) |
+|---|---|---|
+| OpenVINS, every other frame (15 Hz) — system setting | 1.1 cm | 2.0–2.1 cm |
+| OpenVINS, all frames (30 Hz) | 1.2–1.7 cm | 5.6–9.6 cm |
+| Basalt (all frames, stock config) | 3.1–3.6 cm | 4.6–5.0 cm |
+
 ---
 
 ## 2. Host and environment
@@ -286,6 +297,13 @@ Later / noted, not started:
   full-covariance 3.7–7.8 validation, 11–27 forest (expected 3); roll/pitch
   4–19 / 15–61 (expected 2). Residual unattributed. Use full-covariance NEES
   (`docker/scripts/s54/run_fullcov.sh`); the diagonal understates orientation.
+- **Slow segments ~2.5x more overconfident than fast at every frame rate** (§58:
+  slow/fast orientation NEES ratio 2.2–2.8 at 30, ~21 and ~10 Hz tracking). A second
+  effect, separate from correlated per-frame error; likely weak observability under
+  low excitation (hover / slow rotation). Not pursued yet.
+- Basalt's Sim(3) scale is +0.4 to +2.2% on every bag (§59): its calibration is
+  verified honoured (pinhole, our intrinsics, time offset 0), so not a config
+  mismatch; internal to Basalt, not pursued.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
