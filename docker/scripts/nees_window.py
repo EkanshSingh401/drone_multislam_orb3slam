@@ -103,6 +103,9 @@ def main() -> int:
         e2 = Bm.T @ d0
         nees_rp.append(e2 @ np.linalg.solve(Bm.T @ Pr @ Bm, e2))
         tilt_deg.append(np.degrees(np.linalg.norm(e2)))
+    if "--dump" in sys.argv:  # per-sample values: t pos ori rp (PATCHES s57)
+        np.savetxt(sys.argv[sys.argv.index("--dump") + 1],
+                   np.column_stack([est[:, 0], nees_p, nees_o, nees_rp]), fmt="%.9g")
     out = {"dir": od, "window": [w0, w1], "n": int(len(est)), "posyaw_yaw_deg": float(np.degrees(yaw)),
            "pos": stats(np.array(nees_p), 3), "ori": stats(np.array(nees_o), 3),
            "rp": stats(np.array(nees_rp), 2),

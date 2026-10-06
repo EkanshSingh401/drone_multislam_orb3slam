@@ -2531,3 +2531,39 @@ the startup log shows every value parsed as written (File.version 1.0 path,
 reads `IMU.T_b_c1`). The ROS 2 wrapper builds `IMU::Point(acc, gyr, t)` in
 the right order from header stamps. Stopped here as instructed; not re-run on
 the stamp-fixed bags. VINS-Fusion is the proposed replacement baseline.
+
+## 57. ORB-SLAM3 on the stamp-fixed bags, forest NEES vs perception, baseline options
+
+**ORB-SLAM3 stereo-inertial on the 20 §56 bags** (replay, rate 0.5; replay
+guard passed on all; frames 2200/2206 etc.): GT-window ATE validation A
+1.1–25.9 m, B 5.4–28.3 m, forest A 0.52–6.7 m, forest B 0.41–21.3 m; Sim(3)
+scale 0.02–0.98 (`docker/out/diag_s56/gtwin_orb_imufix.jsonl`). Still
+metre-scale after the bias and stamp fixes and a clean config pass (§56):
+replace the stereo-inertial baseline.
+
+**Forest overconfidence vs perception quality** (`s57/segment_corr.py`,
+`run_seg.sh`; 5 s segments over the GT window; 210 forest / 205 validation
+segments). Frame k = k-th `[TRACK]` line of the serial run (count equals the
+runner's stereo pairs exactly) ↔ k-th cam0∩cam1 stamp; `[FI]`/`[MSCKF]`
+lines attributed to the preceding frame. Per-sample NEES from
+`nees_window.py --dump`. Spearman correlation of segment-mean NEES, pooled
+and within-flight (ranks per flight):
+
+| forest | depth | tri reject | tracked | MSCKF used | GT ang. speed | GT speed |
+|---|---|---|---|---|---|---|
+| ori diag (within) | −0.12 | +0.08 | +0.19 | +0.07 | −0.22 | −0.13 |
+| ori full (within) | −0.19 | −0.10 | +0.26 | +0.22 | +0.03 | +0.06 |
+| rp diag (within) | −0.09 | +0.13 | +0.19 | +0.03 | −0.23 | −0.13 |
+
+Validation: depth −0.03, tri reject +0.04, tracked −0.07, angular speed −0.38,
+speed −0.32 (ori diag). Regression of log ori NEES with flight fixed effects
+(per 1 SD), forest: depth −0.06±0.08, tri reject +0.12±0.10, tracked
++0.28±0.08, ang. speed −0.31±0.07 (R² 0.26).
+
+**Within the forest, NEES does not rise with feature depth** (slightly
+negative) or clearly with triangulation rejection; the segment-level data do
+not support linearisation error from distant features. NEES is higher in
+slow / low-rotation segments (both scenes) and, in the forest only, when more
+features are tracked. The between-scene gap is real (median segment ori NEES
+forest 6.7 vs validation 3.2; median attempt depth 8.5 vs 4.2 m) but is not
+explained by depth variation inside the forest. Nothing changed.
