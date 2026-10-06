@@ -52,6 +52,7 @@ while [[ $# -gt 0 ]]; do
             pkill -f static_transform_publisher 2>/dev/null || true
             pkill -f MicroXRCEAgent 2>/dev/null || true
             pkill -f px4_gcs.py 2>/dev/null || true
+            pkill -f imu_restamp.py 2>/dev/null || true
             pkill -f 'bin/px4' 2>/dev/null || true
             pkill -f 'gz sim' 2>/dev/null || true
             pkill -f 'ruby.*gz' 2>/dev/null || true
@@ -63,7 +64,7 @@ while [[ $# -gt 0 ]]; do
                 # pgrep exits non-zero when NOTHING matches, which under
                 # `set -eo pipefail` aborted this very function -- so --stop
                 # reported failure precisely when the stack was already clean.
-                remaining=$({ pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' || true; } | wc -l | tr -d ' ')
+                remaining=$({ pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py|imu_restamp.py' || true; } | wc -l | tr -d ' ')
                 [[ "${remaining}" == "0" ]] && break
                 echo "  ${remaining} process(es) still alive, escalating (attempt ${attempt})"
                 pkill -KILL -f 'gz sim' 2>/dev/null || true
@@ -73,8 +74,9 @@ while [[ $# -gt 0 ]]; do
                 pkill -KILL -f orb_slam3_ros2_wrapper 2>/dev/null || true
                 pkill -KILL -f static_transform_publisher 2>/dev/null || true
                 pkill -KILL -f px4_gcs.py 2>/dev/null || true
+                pkill -KILL -f imu_restamp.py 2>/dev/null || true
             done
-            remaining=$({ pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py' || true; } | wc -l | tr -d ' ')
+            remaining=$({ pgrep -f 'gz sim|bin/px4|parameter_bridge|MicroXRCEAgent|orb_slam3_ros2_wrapper|static_transform_publisher|px4_gcs.py|imu_restamp.py' || true; } | wc -l | tr -d ' ')
             if [[ "${remaining}" != "0" ]]; then
                 echo "WARNING: ${remaining} process(es) survived --stop" >&2
                 exit 1
@@ -257,6 +259,11 @@ nohup ros2 run ros_gz_bridge parameter_bridge --ros-args \
     -p "config_file:=${BRIDGE_CFG}" \
     -p use_sim_time:=true \
     > "${LOGDIR}/gz_bridge.log" 2>&1 &
+
+# The bridge publishes Gazebo's IMU on /camera/imu_gz; imu_restamp.py corrects the
+# half-physics-step stamp lag and republishes /camera/imu (PATCHES s56).
+log "starting imu_restamp (/camera/imu_gz -> /camera/imu)"
+nohup python3 /opt/scripts/imu_restamp.py > "${LOGDIR}/imu_restamp.log" 2>&1 &
 
 # /clock must flow before anything with use_sim_time:=true starts, otherwise
 # those nodes block on a zero clock and look hung.

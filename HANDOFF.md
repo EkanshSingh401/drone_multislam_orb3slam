@@ -17,14 +17,26 @@ evidence; this file is the summary.
 | Who runs experiments | **This host only.** The Mac is retired from experiments. |
 | Images | `drone-sim:jazzy-amd64`, `covins-backend:melodic-amd64`. Build sim with `docker compose -f docker/compose.yaml build sim` (only the last layers rebuild for script/config changes). The scripts are **baked into the image**: rebuild + `up -d --force-recreate sim` after editing anything in `docker/scripts/`. |
 
-**Headline result so far.** In the nearby-structure *validation* scene,
-OpenVINS is accurate **while airborne** on all 10 flights (path A mean ATE
-0.029 m, path B 0.061 m, Sim(3) scale ≈ 1.00). It **diverges after touchdown**
-in 6 of 10 runs because, stationary on the ground, it loses its SLAM features,
-cannot re-triangulate (no parallax), and integrates the IMU alone. ZUPT is off.
-In the *forest* (degraded) scene it is 1–2 orders of magnitude worse in flight.
-ORB-SLAM3 stereo-inertial on the validation bags has **not yet been scored on a
-fair window** (see §6, next steps).
+**Headline result so far** (bags of §55, IMU bias and stamp fixed §54–§56).
+OpenVINS while airborne, GT-window ATE: **validation 1–3 cm** (path A
+0.8–1.3, path B 2.0–2.9 cm), **forest 3–14 cm** (A 3.2–6.4, B 6.8–13.7 cm),
+Sim(3) scale 0.99–1.00. Full-covariance orientation NEES 3.7–7.8 on validation,
+11–27 in the forest (expected 3); position NEES ≤ 0.3 / 0.4–5.
+(Before the §56 stamp fix: validation 2–5 cm, forest 5–21 cm.)
+
+**The forest's earlier metre-scale errors were mostly the IMU bias bug, not
+parallax.** On the old bags forest ATE was 0.11–4 m (A) and 0.25–153 m (B),
+and it was attributed to distant features failing triangulation (§49, R8). With
+only the Gazebo IMU bias corrected (§55) the same scene and paths gave 5–21 cm,
+and 3–14 cm after the §56 stamp fix. The forest is still harder than validation
+(roughly 3–5x the error; the
+triangulation statistics of §49 still hold), but it no longer fails.
+
+OpenVINS still **diverges after touchdown** when stationary (no parallax, ZUPT
+off; §50). ORB-SLAM3 **stereo-inertial is broken** on this rig on every bag,
+before and after the IMU bias fix (§52, §55; not re-run after the §56 stamp
+fix), while stereo-only is cm-level. A time-boxed config pass (§56) found no
+error; a VINS-Fusion baseline is under consideration.
 
 ---
 
@@ -55,12 +67,14 @@ fair window** (see §6, next steps).
 
 ## 3. Data on disk
 
-**Current bags (PATCHES §55, IMU bias fixed): all `20261005-`.**
+**Current bags (PATCHES §55, IMU bias fixed; §56 IMU stamps corrected in place,
+originals kept as `flight_gzstamp.bag`, marker `IMU_STAMP_FIXED.txt`): all `20261005-`.**
+New recordings get the stamp fix at source (`imu_restamp.py`, raw on `/camera/imu_gz`).
 validation A `experiment_d455_pathA_validation_20261005-154055`,
 validation B `experiment_d455_pathB_validation_20261005-160305`,
 forest A `experiment_d455_pathA_20261005-165226`,
 forest B `experiment_d455_pathB_20261005-171524`. OpenVINS outputs:
-`docker/out/replay/<run>_ovser_g9.81_fc/` (with joint-covariance dump);
+`docker/out/replay/<run>_ovser_imufix_fc/` (current; `_g9.81_fc` = before the stamp fix) (with joint-covariance dump);
 ORB-SLAM3 SI replays `<run>_orb_si_r0.5/`. The `20261004-` sets below were
 recorded with the IMU bias walking 42x too fast (§54) and are **superseded**;
 the s54 synthetic bags in `docker/out/diag_s54/synth/` are kept until the fix
@@ -155,7 +169,7 @@ enabling ZUPT), `gravity_mag 9.81`.
   triangulation attempts, accepted and rejected. *Tri reject*: triangulation
   rejects / attempts at OpenVINS's feature initializer (MSCKF + SLAM init).
 
-**R1. OpenVINS, airborne segment, gravity_mag 9.81, fast_threshold 5** (§49)
+**R1 (SUPERSEDED: old bags, IMU bias 42x; see headline and §55). OpenVINS, airborne segment, gravity_mag 9.81, fast_threshold 5** (§49)
 
 | set | n | ATE per run (m) | mean | Sim(3) | depth (all) | tri reject |
 |---|---|---|---|---|---|---|
@@ -191,7 +205,7 @@ at t=83.956 showed dim 130 / 2.3e-9 where the recorded matrix is dim 132 / 3e-19
 296 m): position RMSE 0.046 m, orientation 0.18°, NEES 3.8 (pos) / 0.7 (ori).
 The process segfaults during ROS teardown after finishing; harmless.
 
-**R8. Triangulation diagnosis, forest 053636** (§49): 99% of triangulation
+**R8. Triangulation diagnosis, forest 053636** (§49; the statistics stand, but they are NOT the cause of the old metre-scale forest errors -- that was the IMU bias, §55): 99% of triangulation
 rejects fail `cond > 1e4` (median condA 1.1e5); MSCKF candidates ~1/update,
 83% rejected, chi2 only 2%. fast_threshold sweep (30→5): cam0 tracked features
 flat at 75–81 — threshold is not the limiter; grid cells never reach their cap.
@@ -263,12 +277,10 @@ Later / noted, not started:
 ## 8. Open issues
 
 - OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
-- **OpenVINS orientation still overconfident** after the IMU fix (§55): ori NEES
-  11–28 (diagonal) / 24–43 (full covariance), expected 3. Most of the rest is a
-  ~2 ms IMU stamp lag: `timeshift_cam_imu` +1.5–2 ms gives ori ~7 on the test
-  flight. Applying it is a pending decision; residual ~2x in σ unattributed.
-  Use full-covariance NEES (`docker/scripts/s54/run_fullcov.sh`): the diagonal
-  understates orientation NEES 1.4–2.4x. Position NEES is ≤ 1 on validation.
+- **OpenVINS orientation NEES** after the bias (§55) and stamp (§56) fixes:
+  full-covariance 3.7–7.8 validation, 11–27 forest (expected 3); roll/pitch
+  4–19 / 15–61 (expected 2). Residual unattributed. Use full-covariance NEES
+  (`docker/scripts/s54/run_fullcov.sh`); the diagonal understates orientation.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
@@ -294,7 +306,8 @@ Later / noted, not started:
 
 ## 9. Operational gotchas (each one cost time)
 
-- `run_experiment.sh` leaves the LAST run's Gazebo/PX4 stack running. Run
+- `replay_estimator.sh` now refuses (exit 4) if anything already publishes the
+  sensor topics or /clock (§56). `run_experiment.sh` still leaves the LAST run's Gazebo/PX4 stack running. Run
   `docker compose -f docker/compose.yaml exec -T sim /opt/scripts/bringup_sim.sh --stop`
   before replaying on the default ROS domain, or replay with
   `docker exec -e ROS_DOMAIN_ID=77` (§55: it doubled every replay frame).

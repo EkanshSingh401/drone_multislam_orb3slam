@@ -111,6 +111,13 @@ PHYSICS_STEP_S = 0.004
 MIN_FRAME_GAP_S = math.floor((1.0 / IMG_RATE_HZ) / PHYSICS_STEP_S) * PHYSICS_STEP_S
 MIN_TRACK_FREQ_HZ = 1.0 / MIN_FRAME_GAP_S
 
+# Gazebo stamps an IMU sample with the END of its physics step, but the gyro
+# describes the middle of that step: measured lag 1.89-1.96 ms, constant over
+# the 4,4,4,8 ms stamp pattern (PATCHES s56). imu_restamp.py subtracts this.
+# (The accelerometer lags ~4.4 ms; re-timing it as well made no difference to
+# OpenVINS, s56, so only the stamp is corrected.)
+IMU_STAMP_LAG_S = PHYSICS_STEP_S / 2.0
+
 # Runtime names the bridge config is written against. PX4 spawns
 # "<PX4_SIM_MODEL without gz_>_<instance>", so gz_x500_d455 -i 1 -> x500_d455_1.
 WORLD_NAME = "forest"
@@ -127,6 +134,10 @@ ROS_TOPICS = {
     "depth_image":  "/camera/depth/image_rect_raw",
     "depth_info":   "/camera/depth/camera_info",
     "imu":          "/camera/imu",
+    # Gazebo's IMU as bridged, BEFORE the stamp correction (PATCHES s56):
+    # imu_restamp.py republishes it on "imu" with the stamp moved back by
+    # IMU_STAMP_LAG_S. Estimators and the recorder use "imu".
+    "imu_gz":       "/camera/imu_gz",
 }
 # ==============================================================================
 
@@ -493,7 +504,7 @@ def gen_bridge_yaml(d: dict, with_depth: bool = True, world: str = WORLD_NAME) -
               "depth, 32FC1 metres, aligned to infra1")
         entry(ROS_TOPICS["depth_info"], _gz_sensor("depth", "camera_info", model, world),
               "sensor_msgs/msg/CameraInfo", "gz.msgs.CameraInfo", "")
-    entry(ROS_TOPICS["imu"], _gz_sensor("d455_imu", "imu", model, world),
+    entry(ROS_TOPICS["imu_gz"], _gz_sensor("d455_imu", "imu", model, world),
           "sensor_msgs/msg/Imu", "gz.msgs.IMU",
           "%g Hz, noise model per D455_SIM_CALIBRATION.md" % IMU_RATE_HZ)
 

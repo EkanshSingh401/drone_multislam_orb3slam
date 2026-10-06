@@ -44,7 +44,7 @@
   direction: GZ_TO_ROS
 
 # 200 Hz, noise model per D455_SIM_CALIBRATION.md
-- ros_topic_name: "/camera/imu"
+- ros_topic_name: "/camera/imu_gz"
   gz_topic_name: "/world/forest/model/x500_d455_nodepth_1/link/d455_link/sensor/d455_imu/imu"
   ros_type_name: "sensor_msgs/msg/Imu"
   gz_type_name: "gz.msgs.IMU"

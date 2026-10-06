@@ -73,7 +73,7 @@ else
         SENSOR_TOPICS=(
             /camera/infra1/image_rect_raw /camera/infra1/camera_info
             /camera/infra2/image_rect_raw /camera/infra2/camera_info
-            /camera/imu
+            /camera/imu /camera/imu_gz
         )
         BAG_EXTRA=(--compression-mode file --compression-format zstd)
         echo "    RECORD_SENSORS=1: also recording stereo IR + IMU (zstd)"

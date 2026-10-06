@@ -56,6 +56,22 @@ def yaml_num(txt: str, key: str) -> float:
     return float(re.search(rf"{re.escape(key)}:\s*([0-9.eE+-]+)", txt).group(1))
 
 
+class ImuStamp(unittest.TestCase):
+    """PATCHES s56: Gazebo IMU goes to imu_gz; imu_restamp.py shifts it by IMU_STAMP_LAG_S."""
+    def test_restamp_lag_matches_generator(self):
+        sys.path.insert(0, str(ROOT / "docker/sim/tools"))
+        import gen_d455_sim as g
+        src = (ROOT / "docker/scripts/imu_restamp.py").read_text()
+        lag = float(re.search(r"^LAG_S = ([0-9.eE+-]+)", src, re.M).group(1))
+        self.assertAlmostEqual(lag, g.IMU_STAMP_LAG_S, delta=1e-12)
+
+    def test_bridges_publish_raw_imu_on_imu_gz(self):
+        for p in sorted((ROOT / "docker/sim/config_sim_only").glob("gz_bridge_d455*.yaml")):
+            txt = p.read_text()
+            self.assertIn('ros_topic_name: "/camera/imu_gz"', txt, p.name)
+            self.assertNotIn('ros_topic_name: "/camera/imu"\n', txt, p.name)
+
+
 class RoundTrip(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

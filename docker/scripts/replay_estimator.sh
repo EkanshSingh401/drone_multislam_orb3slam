@@ -39,6 +39,12 @@ hr() { printf '%s\n' "----------------------------------------------------------
 log() { echo "[replay $(date +%H:%M:%S)] $*"; }
 
 # ---------------------------------------------------------------------------
+# 0. Nothing else may already publish the sensor topics (PATCHES s56): a leftover
+#    sim stack doubled every frame of a replay in s55. Exits 4 if busy.
+# ---------------------------------------------------------------------------
+hr; python3 /opt/scripts/check_no_publishers.py --wait 3
+
+# ---------------------------------------------------------------------------
 # 1. The bag must actually contain the sensor streams.
 # ---------------------------------------------------------------------------
 # A bag recorded without RECORD_SENSORS=1 has the pose topics but no images, and

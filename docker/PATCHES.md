@@ -2472,3 +2472,62 @@ frames counted for a 2229-frame bag; stamps ~520 s). Those outputs were
 overwritten after `bringup_sim.sh --stop`. Run `bringup_sim.sh --stop` after
 any recording before replaying on the default domain, or replay in another
 `ROS_DOMAIN_ID` (OpenVINS serial runs here used domain 77).
+
+## 56. Replay guard, IMU stamp lag fixed at source, ORB-SLAM3 config pass
+
+**Replay guard.** `replay_estimator.sh` first runs `check_no_publishers.py`:
+if anything already publishes `/camera/imu`, `/camera/infra{1,2}/image_rect_raw`
+or `/clock` in the replay's ROS domain (3 s discovery wait), it lists the
+publishers and exits 4. Tested: refuses with a stand-in `/clock` publisher,
+passes on a clean graph. Covers the s55 leftover-stack failure.
+
+**IMU stamp lag, characterised** (`s54/imu_lag.py`: gyro − GT body rate vs GT
+angular acceleration, per sample class; GT snapped + mis-snap repaired):
+gyro lag **1.89–1.96 ms, constant** across preceding interval (4 / 8 ms) and
+all four phases of the 4,4,4,8 cycle, best shift −2.0 ms in every class, on
+193151 and 200418. Half a physics step: Gazebo stamps the sample with the end
+of the step, the gyro describes its middle. The accelerometer lags ~4.25–4.5
+ms (robust scan, shallow minimum).
+
+**Fix, offline first** (`fix_imu_timing.py`, test flight 193151, timeshift 0):
+stamps −2.0 ms → ori/rp NEES 21/38 → **6.4/16.4**, online cam–IMU dt settles at
+**+0.22 ms** (was +2.1). Re-timing the accelerometer by another 2.4 ms on
+top: 6.8/17.3, no gain, so only the stamp is corrected.
+
+**Fix at source.** Generated bridges now publish Gazebo's IMU on
+`/camera/imu_gz`; `imu_restamp.py` (started by `bringup_sim.sh`, stopped by
+`--stop`) republishes `/camera/imu` with stamp − `IMU_STAMP_LAG_S`
+(= PHYSICS_STEP_S/2 in `gen_d455_sim.py`; `test_gen_d455_sim.py` checks the
+node's constant against it and that every bridge routes the raw IMU to
+`imu_gz`). The recorder keeps both topics. `timeshift_cam_imu` stays 0.
+Verified on a new flight (`experiment_d455_pathA_validation_20261006-031253`,
+run 071406): gyro–GT lag −0.01 ms (best shift 0.0 in all classes), raw and
+corrected values identical on all 14531 shared samples; OpenVINS ori/rp NEES
+3.7/8.8, online dt +0.15 ms.
+
+**Existing bags.** All 20 §55 bags rewritten in place by `s54/fix_all.sh`:
+original moved to `flight_gzstamp.bag`, corrected written as `flight.bag`
+(uncompressed MCAP), marker `IMU_STAMP_FIXED.txt`. OpenVINS re-run
+(`<run>_ovser_imufix_fc`), timeshift 0:
+
+| set | GT-window ATE (m) | Sim(3) | ori NEES diag / full | rp diag / full | pos NEES |
+|---|---|---|---|---|---|
+| validation A | 0.008 0.010 0.012 0.013 0.009 | 1.000–1.002 | 2.5–4.5 / 3.7–7.0 | 2.9–7.2 / 4.3–14.0 | 0.02–0.07 |
+| validation B | 0.020 0.029 0.025 0.020 0.025 | 1.002–1.003 | 3.5–4.7 / 6.6–7.8 | 4.3–10.1 / 8.1–18.6 | 0.13–0.27 |
+| forest A | 0.064 0.054 0.045 0.050 0.032 | 0.988–1.004 | 7.1–10.8 / 10.9–12.7 | 11.6–19.7 / 15.1–29.9 | 0.36–1.19 |
+| forest B | 0.106 0.069 0.136 0.088 0.068 | 0.994–1.000 | 6.2–15.7 / 9.9–26.9 | 11.6–33.8 / 23.0–60.8 | 1.34–5.06 |
+
+Before the stamp fix (§55): validation 0.019–0.052 m, forest 0.047–0.21 m.
+Online-dt check (one bag per set, `calib_cam_timeoffset` on): settles at
++0.15, +0.11, +0.26, +0.13 ms. Orientation is still above 3 (validation ~2x
+in σ at most, forest more); not attributed.
+
+**ORB-SLAM3 stereo-inertial, time-boxed config pass: nothing wrong found.**
+`IMU.T_b_c1` is IMU←camera with R = R_opt_from_bodyᵀ and t = camera origin in
+the IMU frame (0.00552, 0.0424, 0.01174), the exact inverse of OpenVINS's
+T_cam_imu; noise/walks are continuous densities (ORB-SLAM3 scales by √freq
+itself) and match OpenVINS; IMU.Frequency 200; axes FLU with +g on z at rest;
+the startup log shows every value parsed as written (File.version 1.0 path,
+reads `IMU.T_b_c1`). The ROS 2 wrapper builds `IMU::Point(acc, gyr, t)` in
+the right order from header stamps. Stopped here as instructed; not re-run on
+the stamp-fixed bags. VINS-Fusion is the proposed replacement baseline.
