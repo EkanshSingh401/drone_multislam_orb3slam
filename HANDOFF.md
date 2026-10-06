@@ -55,6 +55,18 @@ fair window** (see §6, next steps).
 
 ## 3. Data on disk
 
+**Current bags (PATCHES §55, IMU bias fixed): all `20261005-`.**
+validation A `experiment_d455_pathA_validation_20261005-154055`,
+validation B `experiment_d455_pathB_validation_20261005-160305`,
+forest A `experiment_d455_pathA_20261005-165226`,
+forest B `experiment_d455_pathB_20261005-171524`. OpenVINS outputs:
+`docker/out/replay/<run>_ovser_g9.81_fc/` (with joint-covariance dump);
+ORB-SLAM3 SI replays `<run>_orb_si_r0.5/`. The `20261004-` sets below were
+recorded with the IMU bias walking 42x too fast (§54) and are **superseded**;
+the s54 synthetic bags in `docker/out/diag_s54/synth/` are kept until the fix
+is fully signed off.
+
+
 Experiment directories (under `docker/out/`), each with `rundirs.txt` listing
 its runs. Every run's sensor bag is `docker/out/eval/<run>/flight.bag`
 (FILE-zstd mcap; reading it leaves an uncompressed `.mcap` beside it).
@@ -221,6 +233,13 @@ Later / noted, not started:
 
 ## 7. Retractions and corrections (do not reuse these numbers)
 
+- **All OpenVINS position NEES before §55** (§53 table, its "vertical σ ≈ 2.4 mm",
+  §54 position NEES): `ov_prep.py` read position σ from the wrong std-file
+  columns (p_y, p_z, v_x). Fixed in §55. Orientation/roll-pitch NEES stand.
+- **§53 "SDF OU bias matches the configured random walks"**: wrong, gz-sensors
+  uses dynamic_bias_stddev as a density (§54).
+- **All results on the `20261004-` bags**: IMU bias 42x too fast (§54); use §55.
+
 - **Mac §36 gravity effect (68% / 85%)**: withdrawn by the Mac (§40); full-flight
   online ATE is not reproducible (two 5-run sets differed 4.9×).
 - **Mac 0.0138 m stereo-only ATE**: a single lucky run; the 3-run value is
@@ -244,20 +263,20 @@ Later / noted, not started:
 ## 8. Open issues
 
 - OpenVINS post-landing divergence (to be addressed by ZUPT, step 1).
-- **OpenVINS covariance is overconfident** (PATCHES §53): NEES 30–460 on the
-  GT airborne window (expected 2–3); vertical σ ~2 mm vs ~2–3 cm error, tilt σ
-  ~0.03° vs ~0.2°. **Cause found (§54)**: gz-sensors treats
-  `dynamic_bias_stddev` as a random-walk density, so the simulated IMU bias walks
-  42x faster than OpenVINS's configured random walk. GT-synthesised IMU with
-  config noise gives ori NEES 2.7–3.9; position NEES only partly recovers.
-  Fix (regenerate SDF vs retune OpenVINS) not yet chosen.
+- **OpenVINS orientation still overconfident** after the IMU fix (§55): ori NEES
+  11–28 (diagonal) / 24–43 (full covariance), expected 3. Most of the rest is a
+  ~2 ms IMU stamp lag: `timeshift_cam_imu` +1.5–2 ms gives ori ~7 on the test
+  flight. Applying it is a pending decision; residual ~2x in σ unattributed.
+  Use full-covariance NEES (`docker/scripts/s54/run_fullcov.sh`): the diagonal
+  understates orientation NEES 1.4–2.4x. Position NEES is ≤ 1 on validation.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
   (airborne accepts on all 10 validation bags, PATCHES §50). For hardware,
   gate ZUPT on PX4's landed state (`vehicle_land_detected`) instead of image
   disparity.
-- ORB-SLAM3 stereo-inertial is broken on this rig (PATCHES §52): replayed on
+- ORB-SLAM3 stereo-inertial is broken on this rig (PATCHES §52; **still broken on
+  the §55 bags with the IMU fixed**: 0.5–76 m, scale 0.01–0.91): replayed on
   the validation bags, stereo-only is 0.7–1.3 cm but stereo-inertial is
   0.7–90 m with Sim(3) scale 0.00–0.88 even after IMU init + VIBA 2 with no
   later reset. IMU delivery verified clean (0 gaps / 0 late). Next suspect:
@@ -274,6 +293,11 @@ Later / noted, not started:
 ---
 
 ## 9. Operational gotchas (each one cost time)
+
+- `run_experiment.sh` leaves the LAST run's Gazebo/PX4 stack running. Run
+  `docker compose -f docker/compose.yaml exec -T sim /opt/scripts/bringup_sim.sh --stop`
+  before replaying on the default ROS domain, or replay with
+  `docker exec -e ROS_DOMAIN_ID=77` (§55: it doubled every replay frame).
 
 - **Never edit a script while it is executing** (bash reads incrementally; this
   killed a Mac experiment, §37). For scripts a running chain will call later,

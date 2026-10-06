@@ -108,7 +108,11 @@ def main() -> int:
     assert len(st) == len(sd) and np.array_equal(st[:, 0], sd[:, 0]), "est/std rows misaligned"
     imu = np.column_stack([st[:, 0], st[:, 5:8], st[:, 1:5]])      # t p q
     # ov_eval order after the pose: Pr11 Pr12 Pr13 Pr22 Pr23 Pr33 Pt11 Pt12 Pt13 Pt22 Pt23 Pt33
-    vr, vp = sd[:, 1:4] ** 2, sd[:, 5:8] ** 2
+    # ov_state_std.txt has THREE orientation sigmas (the 3-dof error state), so its
+    # layout is t, sig_theta(3), sig_p(3), sig_v(3), ... -- unlike ov_state_est's
+    # 4-component quaternion. Position was read from 5:8 (p_y, p_z, v_x) until
+    # PATCHES s55; verified against /openvins/joint_covariance diagonals.
+    vr, vp = sd[:, 1:4] ** 2, sd[:, 4:7] ** 2
     z = np.zeros(len(st))
     est = np.column_stack([imu, vr[:, 0], z, z, vr[:, 1], z, vr[:, 2],
                                 vp[:, 0], z, z, vp[:, 1], z, vp[:, 2]])

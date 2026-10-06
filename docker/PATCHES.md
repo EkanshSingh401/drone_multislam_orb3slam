@@ -2365,3 +2365,110 @@ NEES (5.6–9.0) remains above 2 with `cfg`, same caveat.
 values (acc 0.0127, gyro 8.5e-5) for a replay. (a) keeps the simulated IMU
 D455-like; (b) needs no new flights. The −2 ms IMU stamp lag is a separate,
 smaller effect and is not addressed.
+
+## 55. IMU bias fix, re-recorded bags, ov_prep position-σ bug, full-covariance NEES
+
+**1. Confirmation replay (diagnostic, config not kept).** Old validation bags
+replayed with OpenVINS random walks set to Gazebo's effective values
+(`OV_IMU_RW="0.0127279221 8.48528137e-05"`, new asserted hook in
+`replay_estimator.sh`). Ori / rp NEES: 193700 104/117 → 29/34, 194531 341/460
+→ 10/20, 195913 318/364 → 25/27. Large drop, not ~3: the bias had walked
+from 0 at sim start to ~0.1–0.2 m/s² by takeoff, beyond OpenVINS's initial
+bias prior.
+
+**2. Fix.** `gen_d455_sim.py`: `dynamic_bias_stddev = sigma_rw` (gz-sensors
+uses it as the random-walk density; stationary σ is then σ_rw·√(τ/2)). The
+s54 user note proposed σ_b = σ_rw·√(τ/2), which is the old buggy formula,
+so it was not used. Only the SDFs change (accel 0.0127 → 3e-4,
+gyro 8.5e-5 → 2e-6); estimator configs were already right.
+`docker/sim/tools/test_gen_d455_sim.py` parses the generated SDFs and
+configs, runs gz-sensors' exact recursion at 200 Hz for 120 s (4000
+realisations) and requires the effective random walk = configured (±5%),
+plus an analytic check (±0.1%) and a guard against σ_b/σ_rw > 2. Fails on
+the old files (ratio 42.4), passes on the new.
+
+*New IMU vs GT* (s54 tools, test flight 20261005-193151): accel bias ≤ 0.006
+m/s² (old 0.03–0.24), drift ≈ 0.003 m/s² over the flight; gyro bias ≤
+1.7e-4 rad/s (old ≤ 2.3e-3); accel MAD 0.0145 vs 0.0126 white-only (old
+0.024–0.09: most of s54's "excess white noise" was the bias walk). The
+gyro–GT lag of −2 ms is unchanged (not a noise-model effect).
+
+*Re-recorded*, same parameters as the originals (all `20261005-`):
+
+| condition | experiment dir |
+|---|---|
+| validation A | `experiment_d455_pathA_validation_20261005-154055` (194208 194656 195112 195546 200002) |
+| validation B | `experiment_d455_pathB_validation_20261005-160305` (200418 201426 202424 203422 204400) |
+| forest A | `experiment_d455_pathA_20261005-165226` (205349 205834 210306 210738 211216) |
+| forest B | `experiment_d455_pathB_20261005-171524` (211637 212651 213658 214736 215853) |
+
+Plus test flight `experiment_d455_pathA_validation_20261005-153028` (193151).
+
+**3. `ov_prep.py` bug: position σ read from the wrong columns.**
+`ov_state_std.txt` holds three orientation σ (error state), so its layout is
+t, σθ(3), σp(3), σv(3)…; `ov_prep` read position from `sd[:, 5:8]` =
+(p_y, p_z, v_x). Found because `/openvins/joint_covariance` diagonals
+disagreed ~700x; after the fix they agree to ≤ 2% (std-file print
+precision). **Every position NEES before this section is wrong**: s53's
+position column and its "vertical σ ≈ 2.4 mm" breakdown, and s54's position
+NEES (real, calib, swap). Orientation and roll/pitch used the right columns
+and stand.
+
+**4. OpenVINS on the new bags** (`run_fullcov.sh`: serial replay in ROS
+domain 77 + `joint_cov_dump.py` + both NEES). GT-window ATE (s51 metric,
+`docker/out/diag_s54/gtwin_s55.jsonl`):
+
+| set | ATE per run (m) | Sim(3) scale | old bags (s51/R1) |
+|---|---|---|---|
+| validation A | 0.019 0.021 0.024 0.020 0.022 | 0.993–0.996 | 0.021–0.037 |
+| validation B | 0.039 0.052 0.045 0.047 0.042 | 0.999–1.001 | 0.046–0.077 |
+| forest A | 0.158 0.065 0.059 0.059 0.047 | 0.973–0.994 | 0.11–4.06 |
+| forest B | 0.192 0.117 0.207 0.142 0.120 | 0.988–0.995 | 0.25–152.6 |
+
+NEES, timeshift 0, mean (diag over the whole window / full 3x3 blocks):
+
+| set | pos | ori diag → full | rp diag → full |
+|---|---|---|---|
+| validation A | 0.12–0.21 | 19–28 → 32–43 | 22–49 → 39–86 |
+| validation B | 0.47–0.81 | 11–14 → 27–31 | 13–26 → 34–70 |
+| forest A | 0.74–6.2 | 16–18 → 24–31 | 19–42 → 29–76 |
+| forest B | 3.7–12.5 | 12–21 → 25–38 | 15–37 → 36–79 |
+
+Full-covariance NEES uses `/openvins/joint_covariance`, which is published
+at ~4.5 Hz (181–750 samples per run); diag NEES on that same subset equals
+the whole-window value to within ~3%, so the subset is representative.
+**Diagonal vs full:** position unchanged (≤ 10%); **orientation understated
+1.4–2.4x, roll/pitch 1.5–2.7x by the diagonal approximation**
+(`nees_compare_{validation,forest}.txt`). Position is conservative on
+validation (NEES < 1) and mildly overconfident in the forest.
+
+**Remaining orientation overconfidence: IMU stamp lag.** Timeshift scan on
+193151 (`OV_TIMESHIFT`, new asserted hook; t_imu = t_cam + s), diag ori / rp:
+−2 ms 66/106, 0 21/38, +1 ms 9.5/19.5, **+1.5 ms 6.9/15.9, +2 ms 6.9/16.8**,
++2.5 ms 8.6/20.6, +3 ms 12.8/29.1, +4 ms 29/61. Consistent with the −2 ms
+gyro–GT lag (s54) and online dt +2.1 ms. Not applied to the config (needs a
+decision); the residual ~2x in σ at the optimum is unattributed
+(instantaneous 4/8 ms IMU sampling is the next candidate).
+
+**5. ORB-SLAM3 stereo-inertial is still broken; the bias bug was not its
+cause.** Live (during recording) and replayed (`phase3_orbslam3.sh si`,
+rate 0.5), GT-window ATE:
+
+| set | live (m) | replay (m) | replay Sim(3) scale |
+|---|---|---|---|
+| validation A | 20.4 18.7 1.8 35.6 2.1 | 56.8 76.0 11.1 14.2 2.0 | 0.012–0.48 |
+| validation B | 18.3 44.0 2.1 3.7 21.0 | 4.9 21.8 33.4 7.9 6.3 | 0.014–0.24 |
+| forest A | 17.5 1.6 159.5 1.0 0.9 | 42.9 1.1 0.5 20.1 1.5 | 0.020–0.90 |
+| forest B | 3.5 1.6 8.4 57.5 69.5 | 14.8 16.4 7.3 26.9 0.8 | 0.017–0.91 |
+
+Its IMU noise matches OpenVINS (verified by `--verify`), so the next suspect
+stays s52's: `orbslam3_d455_stereo_inertial.yaml` (Tbc, axes, units).
+
+**Operational: the first ORB-SLAM3 replay pass was contaminated.**
+`run_experiment.sh` tears down the stack *before* each run, so after the last
+run the forest Gazebo/PX4 stack kept publishing `/camera/*` and `/clock` on
+the default ROS domain (2.7 h). The replay node received both streams (4700
+frames counted for a 2229-frame bag; stamps ~520 s). Those outputs were
+overwritten after `bringup_sim.sh --stop`. Run `bringup_sim.sh --stop` after
+any recording before replaying on the default domain, or replay in another
+`ROS_DOMAIN_ID` (OpenVINS serial runs here used domain 77).

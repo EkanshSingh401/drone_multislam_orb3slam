@@ -107,6 +107,24 @@ if [[ "${EST}" == "openvins_serial" ]]; then
             || { echo "replay: failed to set ${k}=${v}" >&2; exit 2; }
         log "OV_SET ${k}: ${v}"
     done
+    # OV_IMU_RW="acc gyro": random-walk override in the copied kalibr_imu_chain.yaml
+    # -- a diagnostic replay (PATCHES s55), asserted.
+    if [[ -n "${OV_IMU_RW:-}" ]]; then
+        read -r RWA RWG <<< "${OV_IMU_RW}"
+        sed -i -E "s|^(  accelerometer_random_walk:).*|\1 ${RWA}|; s|^(  gyroscope_random_walk:).*|\1 ${RWG}|" "${OV_CFG_DIR}/kalibr_imu_chain.yaml"
+        grep -qx "  accelerometer_random_walk: ${RWA}" "${OV_CFG_DIR}/kalibr_imu_chain.yaml" \
+            && grep -qx "  gyroscope_random_walk: ${RWG}" "${OV_CFG_DIR}/kalibr_imu_chain.yaml" \
+            || { echo "replay: failed to set random walks=${OV_IMU_RW}" >&2; exit 2; }
+        log "OV_IMU_RW acc ${RWA} gyro ${RWG}"
+    fi
+    # OV_TIMESHIFT=s: timeshift_cam_imu for BOTH cameras in the copied
+    # kalibr_imucam_chain.yaml (t_imu = t_cam + s) -- a diagnostic replay (s55), asserted.
+    if [[ -n "${OV_TIMESHIFT:-}" ]]; then
+        sed -i -E "s|^(  timeshift_cam_imu:).*|\1 ${OV_TIMESHIFT}|" "${OV_CFG_DIR}/kalibr_imucam_chain.yaml"
+        [[ $(grep -c "^  timeshift_cam_imu: ${OV_TIMESHIFT}$" "${OV_CFG_DIR}/kalibr_imucam_chain.yaml") -eq 2 ]] \
+            || { echo "replay: failed to set timeshift_cam_imu=${OV_TIMESHIFT}" >&2; exit 2; }
+        log "OV_TIMESHIFT ${OV_TIMESHIFT}"
+    fi
     hr; log "OpenVINS SERIAL $(grep -E '^gravity_mag:' "${OV_CFG_DIR}/openvins_estimator_config.yaml")"
     # DEBUG for the per-frame "[TIME] ... seconds for tracking" lines, which are
     # how frames processed is counted (same as the topic path).

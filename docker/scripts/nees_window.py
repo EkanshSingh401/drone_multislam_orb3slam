@@ -61,8 +61,11 @@ def stats(x, dof):
 
 def main() -> int:
     od, gtf = sys.argv[1], sys.argv[2]
+    # --est FILE: score another est_cov-format file, e.g. est_cov_full.txt with the
+    # full 3x3 blocks from /openvins/joint_covariance (PATCHES s55)
+    est_name = sys.argv[sys.argv.index("--est") + 1] if "--est" in sys.argv else "est_cov.txt"
     w0, w1 = window(gtf)
-    est = np.loadtxt(os.path.join(od, "est_cov.txt"))
+    est = np.loadtxt(os.path.join(od, est_name))
     gt = np.loadtxt(os.path.join(od, "gt_imu.txt"))
     est = est[(est[:, 0] >= w0) & (est[:, 0] <= w1)]
     # GT interpolated to the estimate stamps (linear position, slerp orientation).
@@ -107,6 +110,10 @@ def main() -> int:
            "rmse_tilt_deg": float(np.sqrt(np.mean(np.square(tilt_deg)))),
            "median_std_pos_m": float(np.median(np.sqrt(est[:, [14, 17, 19]].sum(1)))),
            "median_std_tilt_deg": float(np.degrees(np.median(np.sqrt(est[:, 8] + est[:, 11]))))}
+    if est_name != "est_cov.txt":
+        out["est"] = est_name
+        print(json.dumps(out))
+        return 0
     # files for the ov_eval posyaw cross-check
     np.savetxt(os.path.join(od, "est_cov_gtwin.txt"), est, fmt="%.9f")
     np.savetxt(os.path.join(od, "gt_imu_gtwin.txt"), gt[:, :8], fmt="%.9f")

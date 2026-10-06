@@ -24,17 +24,24 @@ The hard part is the IMU noise units, and getting it wrong is silent:
     into Gazebo (or a discrete sigma straight into OpenVINS) misstates the noise
     by ~14x, and the filter still runs -- it just mis-weights the IMU.
 
-  * Bias is NOT a plain random walk in Gazebo. gz-sim models a first-order
-    Gauss-Markov (Ornstein-Uhlenbeck) process via <dynamic_bias_stddev> (the
-    stationary standard deviation, sigma_b) and <dynamic_bias_correlation_time>
-    (tau). Kalibr's *_random_walk is the driving random-walk density sigma_rw.
-    For an OU process with stationary sigma_b and correlation time tau:
+  * Bias is NOT a plain random walk in Gazebo. gz-sensors models a first-order
+    Gauss-Markov (Ornstein-Uhlenbeck) process via <dynamic_bias_stddev> (sigma_b)
+    and <dynamic_bias_correlation_time> (tau). Per step dt it does
+    (gz-sensors8 src/GaussianNoiseModel.cc):
 
-        sigma_rw = sigma_b * sqrt(2 / tau)
-        sigma_b  = sigma_rw * sqrt(tau / 2)
+        bias = exp(-dt/tau) * bias + N(0, sqrt(sigma_b^2 * tau/2 * (1 - exp(-2 dt/tau))))
 
-    We declare the random-walk densities (the physical quantity) and derive
-    Gazebo's sigma_b, so the direction of conversion never loses information.
+    For dt << tau the increment variance is sigma_b^2 * dt, so sigma_b IS the
+    driving random-walk density -- NOT the stationary sigma (which is
+    sigma_b * sqrt(tau/2)). Kalibr's *_random_walk is that same density, so
+
+        sigma_b = sigma_rw
+
+    and with tau (1 h) >> a flight the bias behaves as a random walk of density
+    sigma_rw. The bias starts at 0 at sim start (no <bias_mean>/<bias_stddev>).
+    PATCHES.md s54: an earlier version set sigma_b = sigma_rw * sqrt(tau/2),
+    treating sigma_b as the stationary sigma; Gazebo then walked 42x faster
+    than the estimators were told. test_gen_d455_sim.py round-trips this.
 
 Run with --check to verify the committed files match the spec.
 """
@@ -126,13 +133,12 @@ ROS_TOPICS = {
 
 def derived() -> dict:
     s = math.sqrt(IMU_RATE_HZ)
-    tau = BIAS_CORRELATION_TIME_S
     fx = (IMG_W / 2.0) / math.tan(IR_HFOV_RAD / 2.0)
     return {
         "acc_stddev": ACC_NOISE_DENSITY * s,
         "gyr_stddev": GYR_NOISE_DENSITY * s,
-        "acc_bias_stddev": ACC_RANDOM_WALK * math.sqrt(tau / 2.0),
-        "gyr_bias_stddev": GYR_RANDOM_WALK * math.sqrt(tau / 2.0),
+        "acc_bias_stddev": ACC_RANDOM_WALK,   # gz sigma_b is the RW density (s54)
+        "gyr_bias_stddev": GYR_RANDOM_WALK,
         "sqrt_rate": s,
         "fx": fx, "fy": fx,
         "cx": IMG_W / 2.0, "cy": IMG_H / 2.0,
