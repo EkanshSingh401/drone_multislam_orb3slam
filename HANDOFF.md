@@ -11,7 +11,7 @@ evidence; this file is the summary.
 
 | | |
 |---|---|
-| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ `a847b00` (pushed; PATCHES §50–53). `amd64-gpu` no longer tracks it (local `68c013b`, origin `ad9b259`). History is linear on top of the Mac's final commit `4624988`. |
+| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ `e6dc73e` (pushed; PATCHES §50–56). `amd64-gpu` no longer tracks it (local `68c013b`, origin `ad9b259`). History is linear on top of the Mac's final commit `4624988`. |
 | OpenVINS fork | `EkanshSingh401/open_vins`, branch `openvins-integration` @ **`5b14b93`** (pushed), pinned by commit in `docker/sim/Dockerfile` (`OPEN_VINS_COMMIT`). |
 | Other forks | `active_slam_msgs` `a0790aa`, `active_slam_planner` `f56e114`, `active_slam_information` `e225068` (pinned in the Dockerfile). |
 | Who runs experiments | **This host only.** The Mac is retired from experiments. |
