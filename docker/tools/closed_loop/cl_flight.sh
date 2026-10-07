@@ -31,7 +31,7 @@ ros2 run active_slam_planner openvins_to_px4 --ros-args -p enabled:=true -p odom
 timeout 8 ros2 topic list 2>/dev/null | grep -i land > $OD/land_topics.txt
 sleep 8
 /root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/octomap_mapper --ros-args -p use_sim_time:=true -p slice_height:=1.5 -p max_range:=8.0 > $OD/mapper.log 2>&1 &
-/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/exploration_planner --ros-args -p use_sim_time:=true -p planner_type:=$TYPE -p flight_height:=1.5 ${PLANNER_ARGS:-} > $OD/planner.log 2>&1 &
+/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/exploration_planner --ros-args -p use_sim_time:=true -p planner_type:=$TYPE -p flight_height:=1.5 ${SIGMA_L:+-p sigma_virtual:=$SIGMA_L} ${PLANNER_ARGS:-} > $OD/planner.log 2>&1 &
 python3 /out/cl/gt_watchdog.py ${WORLD:-validation} > $OD/watchdog.log 2>&1 &
 sleep 2
 timeout 900 python3 ${EXECUTOR:-/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/offboard_executor.py} --ros-args -p flight_height:=1.5 -p max_mission_s:=${MAX_MISSION:-180.0} > $OD/executor.log 2>&1
