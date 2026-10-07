@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ov_jacobian_gate</name>
+  <version>0.1.0</version>
+  <description>Gate (PATCHES s60): active_slam_information::predict_measurement vs OpenVINS UpdaterHelper::get_feature_jacobian_full at OpenVINS's own linearization point.</description>
+  <maintainer email="ekanshsingh38@gmail.com">Ekansh Singh</maintainer>
+  <license>GPL-3.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>active_slam_msgs</depend>
+  <depend>ov_core</depend>
+  <depend>ov_msckf</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

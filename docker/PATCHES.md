@@ -2688,3 +2688,61 @@ deleted after archiving everything needed to reproduce §58/§59:
 `docker/out/basalt/results_s58.tgz`, `results_s59_heldout.tgz` (trajectories,
 base_link TUMs, calibration + conversion logs, frame counts, logs, scores).
 Images are regenerable with `basalt_export.py` from the bags.
+
+## 60. Planner phase step 1–2: linearization point in JointCovariance; convention GATE passes
+
+**Step 1, message.** `active_slam_msgs` (local commit on `openvins-integration`):
+new `PoseLinearization` (state_id, timestamp, JPL `q_gtoi`, `p_iing`, and
+their FEJ values), `LandmarkLinearization` (feature/state id,
+representation, anchor camera/clone, `p_fing`, `p_fing_fej`, the 3-vector
+`rep_value`, `h_f` 3x3 and `h_x` 3xΣ with `hx_state_ids`/`hx_sizes`),
+`CameraCalibration` (JPL `q_itoc`, `p_iinc`, 8 intrinsics, model, state ids
+or -1). `JointCovariance` gains `state_uses_fej`, `imu_pose`,
+`clone_poses[]`, `landmarks[]`, `cameras[]` (additive).
+
+OpenVINS fork (`ROS2Visualizer::publish_joint_covariance`, local commit):
+filled in the same callback right after the covariance snapshot, inside the
+existing `OV_JOINT_COV_AVAILABLE` guard. Landmark Jacobians come from
+`UpdaterHelper::get_feature_jacobian_representation` — signature verified in
+this fork (`UpdaterHelper.h:99`: `(shared_ptr<State>, UpdaterHelperFeature&,
+MatrixXd &H_f, vector<MatrixXd> &H_x, vector<shared_ptr<Type>> &x_order)`).
+The feature is built the way `UpdaterSLAM` builds it; for anchored
+representations `p_fing_fej` = `p_fing`, because
+`get_feature_jacobian_full` linearizes the measurement at the current
+anchored position (only the representation Jacobian uses the FEJ anchor).
+
+Builds: **Jazzy** (sim image, Ceres 2.2) and **Humble** (`osrf/ros:humble-desktop`
++ apt libceres-dev 2.0, libboost-all-dev): `active_slam_msgs`, `ov_core`,
+`ov_init`, `ov_msckf` all rc 0, `OV_JOINT_COV_AVAILABLE` defined; Jazzy 0
+warnings in ov_msckf. Scratch builds in `docker/out/build_s60/{jazzy,humble}`.
+Pitfall: a stale `active_slam_msgs_DIR` in CMakeCache (pointing at the image's
+installed messages) silently compiled against the old definition; pass
+`-Dactive_slam_msgs_DIR` and clear the cache.
+
+**Step 2, GATE** (`docker/tools/ov_jacobian_gate`): reads recorded
+JointCovariance messages, rebuilds a minimal `ov_msckf::State` at the published
+linearization point, and for every SLAM landmark × every non-anchor clone ×
+camera from which it projects in front and inside the image, compares
+OpenVINS's `UpdaterHelper::get_feature_jacobian_full` (pixel Jacobian divided
+by fx, fy; zero distortion asserted) with `active_slam_information::
+predict_measurement` (current = candidate = that clone's FEJ pose; landmark
+`p_fing_fej`, `h_f`, `h_x`). Data: serial replay of validation 194208 with the
+s60 build (`record_jc.sh`), 239 messages recorded, 228 usable.
+
+| block | n | max rel err | sign flips | transposed R |
+|---|---|---|---|---|
+| observing clone dθ | 138188 | 1.7e-15 | 0 | 0 |
+| observing clone dp | 138188 | 4.1e-16 | 0 | 0 |
+| landmark representation (H_f) | 138188 | 1.3e-15 | 0 | 0 |
+| anchor clone dθ | 138188 | 5.5e-16 | 0 | 0 |
+| anchor clone dp | 138188 | 4.1e-16 | 0 | 0 |
+
+**GATE: PASS** — the planner's stated convention (JPL q_GtoI, local
+R = (I − [dθ]×) R̂, [dθ dp] clone order, normalized coordinates) is
+OpenVINS's, to machine precision, on every block.
+Negative control (`... hamilton`: planner reads the same quaternion as
+Hamilton, i.e. Rᵀ): every block FAILS (rel err 0.93–1.14), so the gate does
+detect that mismatch. Caveat: the message carries no observation history, so
+pairs are "visible from the clone", not "actually observed by OpenVINS";
+H depends only on the linearization point, so this does not affect the check.
+Fork commits are local (not pushed; Dockerfile pins unchanged).
