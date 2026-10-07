@@ -2811,3 +2811,70 @@ assumed measured in every frame (OpenVINS measures only those tracked and passin
 χ²), and OpenVINS's own overconfidence in slow segments (§58). Known omission in
 both predictions: MSCKF features and newly initialized SLAM features also inform
 the IMU state in reality.
+
+## 62. Visible-vs-tracked decomposition of predicted vs realized gain (no fix)
+
+**Instrumentation (open_vins fork, local).** `UpdaterSLAM::update` logs one
+DEBUG line per SLAM feature per update: `[SLAMEV] t= id= n0= n1= outcome=
+nomeas|fewmeas|chi2|used [chi2= thr=]`. `VioManager::stage_hook` (unset = no
+cost) is called after "propagated", "msckf", "slam", "init"; with
+`joint_cov_stages:=true` the visualizer publishes a JointCovariance snapshot at
+each (new `stage` field in active_slam_msgs, local), unthrottled; the normal
+publication is `stage: post`. Serial runs: 5 snapshots per update recorded
+(4769/953 etc.), DEBUG log.
+
+**Tool.** `docker/tools/ig_prediction_validation/src/ig_decomposition.cpp`
+(`run_decomp.sh`), same 6 held-out flights and 1 s segments as s61. Per
+segment, same marginal (IMU + XYZ of landmarks present at both ends):
+realized gain split by stage from the snapshots; prediction (b) with all
+predicted-visible (frame, landmark, camera) vs only those OpenVINS used
+(`[SLAMEV] outcome=used` and that camera had a measurement).
+
+**Bug found and fixed in my s61 code.** `JointCovProblem::T_metric(keep)` treated
+an EMPTY landmark set as "all landmarks", so in segments where no landmark
+survived the "same marginal" was every landmark in each snapshot (19 absurd
+outlier segments, e.g. MSCKF −800 / init +2000 nats). Now `T_metric(const
+set*)`: null = all, empty = IMU only. s61 recomputed from the s62 bags (s61 bags
+predate the `stage` field and no longer deserialize): (a) 1.316 [1.18, 1.57],
+(b) 1.101 [1.02, 1.18] over 197 segments — s61's 1.31 / 1.09 stand. Output JSON
+now writes null for NaN.
+
+**Decomposition** (165 segments with all stage snapshots usable; 37 excluded
+where a common landmark was not linearizable at some stage), nats per ~1.06 s
+segment, mean (median):
+
+| | validation (79) | forest (86) | all (165) |
+|---|---|---|---|
+| realized | 42.5 (33.2) | 23.5 (14.9) | 32.6 (24.4) |
+| predicted, all visible | 45.7 (39.6) | 25.0 (16.5) | 34.9 (28.8) |
+| predicted, used only | 42.0 (34.6) | 22.7 (14.0) | 32.0 (24.6) |
+| (a) over-predicted, visible but unused | **3.69** (3.68) | **2.28** (1.70) | **2.95** (2.62) |
+| (b) under-predicted, MSCKF + new landmarks | **0.88** (0.47) | **0.43** (0.00) | **0.64** (0.21) |
+|   of which MSCKF / init | 0.53 / 0.35 | 0.14 / 0.29 | 0.33 / 0.32 |
+| residual = realized − (used + (b)) | −0.34 (−0.49) | 0.37 (0.02) | 0.03 (−0.11) |
+| realized propagation cost | −14.6 | −10.5 | −12.4 |
+
+(a) dominates (b) by ~4.6x; they cancel only partly. Predicting exactly the
+measurements OpenVINS used reproduces the realized gain (median ratio 1.000,
+residual 0.03 nats mean): the s61 excess is visible-but-unused measurements,
+not a model error.
+
+**Usage of predicted-visible (frame, landmark, camera)** (190 835 records):
+validation 0.920, forest 0.915. Tracked 99.9% / 99.7%; outcomes: used, χ²
+reject 0.2% / 0.3%, not tracked 0.1% / 0.3%. **The unused ~8% is mostly
+single-camera tracking**: the feature was used but the predicted camera had no
+measurement (7.6% / 7.9% of records). Dependence (usage by bin): validation
+flat (0.86–0.97) in depth, viewing angle, image border distance, speed, camera,
+age. Forest: near features drop (depth < 2 m 0.59, 2–3 m 0.76; small n), > 12 m
+0.87; viewing-angle change > 5° 0.81, > 10° 0.62; fastest rotation (> 0.5 rad/s)
+0.90. Scene difference small overall.
+
+**Training data** (feature-quality predictor): `docker/out/diag_s62/
+d_<run>/records.jsonl`, one line per predicted-visible (frame, landmark, camera):
+scene, t, feature id, cam, depth, u, v, border_px, view_angle_deg (vs the anchor
+camera's ray), age_s, frame angular/linear speed, tracked, n_cam_meas, outcome,
+chi2, chi2_thr, used. All lines valid JSON.
+
+**Scope reminder.** Predicted vs realized compares against OpenVINS's own
+covariance: it validates agreement with the filter's belief, not that the
+belief is true (NEES does that; orientation is still overconfident, s58–s59).

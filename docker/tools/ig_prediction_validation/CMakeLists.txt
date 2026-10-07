@@ -22,5 +22,10 @@ add_executable(ig_prediction_validation src/ig_prediction_validation.cpp
 target_include_directories(ig_prediction_validation PRIVATE ${ASI_DIR}/include ${EIGEN3_INCLUDE_DIR})
 ament_target_dependencies(ig_prediction_validation rclcpp rosbag2_cpp sensor_msgs active_slam_msgs ov_core ov_init ov_msckf)
 target_link_libraries(ig_prediction_validation ${OpenCV_LIBRARIES} ${Boost_LIBRARIES})
-install(TARGETS ig_prediction_validation DESTINATION lib/${PROJECT_NAME})
+add_executable(ig_decomposition src/ig_decomposition.cpp
+  ${ASI_DIR}/src/information_gain.cpp ${ASI_DIR}/src/view_geometry.cpp)
+target_include_directories(ig_decomposition PRIVATE ${ASI_DIR}/include ${EIGEN3_INCLUDE_DIR})
+ament_target_dependencies(ig_decomposition rclcpp rosbag2_cpp active_slam_msgs ov_core ov_init ov_msckf)
+target_link_libraries(ig_decomposition ${OpenCV_LIBRARIES} ${Boost_LIBRARIES})
+install(TARGETS ig_prediction_validation ig_decomposition DESTINATION lib/${PROJECT_NAME})
 ament_package()

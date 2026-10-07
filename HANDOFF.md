@@ -56,7 +56,13 @@ point; the planner's Jacobians match OpenVINS's to 1e-15 (gate, §60). The C++
 `fisher_ig_estimator` (active_slam_information) scores the metric map by
 D-optimality and is launched by `active_slam.launch.py`. Prediction vs realized
 gain over 1 s segments: 1.31x optimistic as built, 1.09x with OpenVINS's
-propagation included (§61). Closed loop (step 5) not started.
+propagation included (§61). Of the remaining ~10%: visible-but-unused
+measurements over-predict ~3 nats/s (mostly features tracked in one camera only),
+MSCKF + new landmarks under-predict ~0.6 nats/s; predicting exactly the used
+measurements matches realized (§62). Closed loop (step 5) not started.
+**Note:** predicted vs realized is measured against OpenVINS's own covariance, so
+it validates agreement with the filter's belief; NEES separately measures whether
+that belief is true (orientation still overconfident, §58–§59).
 
 ---
 

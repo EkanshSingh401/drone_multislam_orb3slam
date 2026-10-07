@@ -47,6 +47,13 @@
 namespace asi = active_slam_information;
 using Eigen::MatrixXd;
 
+static std::string jn(double x) {
+  if (!std::isfinite(x)) return "null";
+  char b[64];
+  std::snprintf(b, sizeof b, "%.6f", x);
+  return b;
+}
+
 struct PropagatorAccess : public ov_msckf::Propagator {
   using ov_msckf::Propagator::Propagator;
   using ov_msckf::Propagator::predict_and_compute;
@@ -79,6 +86,7 @@ int main(int argc, char** argv) {
       active_slam_msgs::msg::JointCovariance m;
       rclcpp::SerializedMessage sm(*bm->serialized_data);
       ser.deserialize_message(&sm, &m);
+      if (!m.stage.empty() && m.stage != "post") continue;  // s62 stage snapshots: use the normal publication only
       jc.push_back(m);
     }
   }
@@ -139,7 +147,7 @@ int main(int argc, char** argv) {
     if (!P0.ok || !P1.ok) continue;
     std::set<long long> common;
     for (auto& kv : P0.landmark_index) if (P1.landmark_index.count(kv.first)) common.insert(kv.first);
-    const MatrixXd T0 = P0.T_metric(common), T1 = P1.T_metric(common);
+    const MatrixXd T0 = P0.T_metric(&common), T1 = P1.T_metric(&common);
     bool ok0, ok1;
     const double L0 = logdet_spd(T0 * P0.Sigma * T0.transpose(), &ok0);
     const double L1 = logdet_spd(T1 * P1.Sigma * T1.transpose(), &ok1);
@@ -243,10 +251,10 @@ int main(int argc, char** argv) {
     }
     std::printf(
         "{\"t0\":%.3f,\"t1\":%.3f,\"frames\":%zu,\"common_landmarks\":%zu,\"landmarks_M0\":%zu,\"meas_a\":%zu,\"meas_b\":%d,"
-        "\"L0\":%.6f,\"L1\":%.6f,\"realized\":%.6f,\"pred_a\":%.6f,\"post_a\":%.6f,\"pred_b\":%.6f,\"post_b\":%.6f,"
-        "\"prop_only\":%.6f,\"ang_speed\":%.5f,\"speed\":%.5f}\n",
+        "\"L0\":%.6f,\"L1\":%.6f,\"realized\":%.6f,\"pred_a\":%s,\"post_a\":%s,\"pred_b\":%s,\"post_b\":%s,"
+        "\"prop_only\":%s,\"ang_speed\":%.5f,\"speed\":%.5f}\n",
         t0, t1, frames.size(), common.size(), P0.landmarks.size(), meas_a.size(), n_meas_b, L0, L1, L0 - L1,
-        g_a.ok ? g_a.delta : NAN, g_a.ok ? g_a.posterior_logdet : NAN, pred_b, post_b, prop_only, ang / (t1 - t0),
+        jn(g_a.ok ? g_a.delta : NAN).c_str(), jn(g_a.ok ? g_a.posterior_logdet : NAN).c_str(), jn(pred_b).c_str(), jn(post_b).c_str(), jn(prop_only).c_str(), ang / (t1 - t0),
         dist / (t1 - t0));
   }
   return 0;
