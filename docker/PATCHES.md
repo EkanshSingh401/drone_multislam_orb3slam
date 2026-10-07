@@ -3128,3 +3128,16 @@ skipped). `cl_report.py` now carries the last value forward and checks monotonic
 stages recomputed (`docs/overnight/*_v2.jsonl`, `aggregate_v2.md`). Forest, median [range]:
 known @180 s frontier 1900 [1120–3880] m³, IG 2100 [1730–3220] m³; flights are short
 (coverage stream ends 63–157 s after exploration starts in 9 of 10) and overlap heavily.
+
+## 69. Day 2 step 3–4: pose-marginal objective and lambda sweep
+
+`planner_type: pose_cov`: score = dI_pose + λ·coverage_gain (derivation and tests in
+active_slam_information MATH_TO_CODE.md `e712fbf`; coverage ray-cast tests in
+active_slam_sim). λ ∈ {0, 0.01, 0.1, 1, 10} nats/m³ (from one probe flight's term
+magnitudes), 3 flights each, validation, 180 s, image built before step 5. Table
+`docs/day2/step4_table.md`, plot `docs/day2/d2_step4_tradeoff.png`:
+coverage @180 s rises from 1070 m³ (λ = 0) to ~1460–1770 m³ (λ ≥ 0.1); ATE is lowest at
+λ = 0 (0.012 m); orientation NEES ~4 for λ ≤ 0.1 and ~17–18 at λ = 1–10. Frontier
+1350 m³ / 0.019 m / 3.8; old IG 2000 m³ / 0.034 m / 9.1. One in-flight failure (λ = 0.1;
+coverage 11 200 m³ = estimator divergence) and one contact each at λ = 0.1, 1, 10 — these
+flights ran with the ESDF-band blind spot fixed in step 5. No best λ picked.

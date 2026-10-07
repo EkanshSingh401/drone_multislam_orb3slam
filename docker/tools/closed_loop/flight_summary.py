@@ -28,14 +28,18 @@ out['landed_ok'] = 'landed and disarmed' in ex; out['touchdown_by'] = 'px4' if '
 out['gate_open'] = 'GATE OPEN' in open(f'{d}/gate.log').read() if os.path.exists(f'{d}/gate.log') else None
 # planner decisions: number, chosen-candidate real/virtual gain shares
 r = rosbag2_py.SequentialReader(); r.open(rosbag2_py.StorageOptions(uri=f'{d}/flight.bag', storage_id=''), rosbag2_py.ConverterOptions('', ''))
-r.set_filter(rosbag2_py.StorageFilter(topics=['/exploration_planner/decision'])); shares, ng = [], 0
+r.set_filter(rosbag2_py.StorageFilter(topics=['/exploration_planner/decision'])); shares, ng, dip, cvg = [], 0, [], []
 while r.has_next():
     _, b, _ = r.read_next(); m = json.loads(deserialize_message(b, String).data)
     if m['chosen'] < 0: continue
     ng += 1; c = m['candidates'][m['chosen']]
+    if c.get('dI_pose') is not None: dip.append(c['dI_pose'])
+    if c.get('coverage_gain') is not None: cvg.append(c['coverage_gain'])
     dr, dv = c.get('delta_real'), c.get('delta_virt')
     if dr is not None and dv is not None and dr + dv > 0: shares.append(dr / (dr + dv))
 out['goals'] = ng
+out['chosen_dI_pose_median'] = round(float(np.median(dip)), 3) if dip else None
+out['chosen_coverage_gain_median'] = round(float(np.median(cvg)), 2) if cvg else None
 out['real_share_median'] = round(float(np.median(shares)), 3) if shares else None
 out['real_share_iqr'] = [round(float(np.percentile(shares, 25)), 3), round(float(np.percentile(shares, 75)), 3)] if shares else None
 kf = out.get('known_m3_final'); out['known_m3_per_m'] = round(kf / out['path_m'], 2) if kf and out['path_m'] else None

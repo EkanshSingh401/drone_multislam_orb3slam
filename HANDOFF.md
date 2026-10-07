@@ -368,6 +368,10 @@ Later / noted, not started:
   (4) forest coverage 'decrease' was a reporting artifact (fixed, §68; use *_v2 results);
   (5) VIO jump/drift faults: PX4 follows them unless gated (vio_health_gate); slow drift
   needs a second sensor.
+- **Day 2 (REPORT_2026-10-07.md, §68–§70):** sigma_l plumbing verified (flat curve is the
+  log gain above a ~9 mm crossover); coverage report fixed; new `pose_cov` planner mode and λ
+  sweep (§69); IG collisions traced to an ESDF-band blind spot for low obstacles under the
+  vehicle (fixed: band 1.0 m below the slice) + speed-scaled margins (§70).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
