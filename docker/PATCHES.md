@@ -3141,3 +3141,15 @@ coverage @180 s rises from 1070 m³ (λ = 0) to ~1460–1770 m³ (λ ≥ 0.1); A
 1350 m³ / 0.019 m / 3.8; old IG 2000 m³ / 0.034 m / 9.1. One in-flight failure (λ = 0.1;
 coverage 11 200 m³ = estimator divergence) and one contact each at λ = 0.1, 1, 10 — these
 flights ran with the ESDF-band blind spot fixed in step 5. No best λ picked.
+
+## 70. Day 2 step 5: IG collisions — ESDF band blind spot fixed, speed-scaled margins
+
+Cause: obstacles just below flight height. box_se is 1.2 m tall; the vehicle flies at
+~1.45 m (base_link) with landing gear to ~1.2 m; the mapper's 2D ESDF counted occupied voxels
+only within ±0.6 m of the slice (OpenVINS z 1.5, ≈ 1.13–2.33 m above ground), seeing ~7 cm of
+the box. s2_ig_2 came down on its top; s3_sig0.3_3 passed 0.26 m above its corner.
+Fix: `esdf_band_below` 1.0 m, `esdf_band_above` 0.6 m (mapper); `margin_time` 1.0 s added as
+margin_time × cruise_speed to r_path and r_safe (planner). 5 IG flights (σ_l = 1, validation):
+min GT clearance 1.07 [0.96–1.25] m, 0 contacts (before: 0.70 [0.00–0.74], 1 contact);
+coverage @180 s 1880 [1760–2000] m³; ATE 0.032 [0.025–0.053] m; 1 post-landing watchdog
+disarm (ground). Results `docs/day2/d2_step5_results.jsonl`.
