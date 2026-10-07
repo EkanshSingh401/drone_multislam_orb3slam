@@ -80,3 +80,19 @@ Decisions made without the user, each with what / why / alternatives.
   `coverage_max_drop_m3`). All stages recomputed from the bags (`stage*_results_v2.jsonl`).
 - `ended_early_at_s` is where the recorded coverage stream ends relative to the start of
   exploration (≈ landing/teardown), an upper bound on when exploration actually ended.
+
+## Day 2, step 3 — pose-marginal objective
+- **dI_pose is measured against the CURRENT pose covariance** (log det Σ_pose(now) − log det
+  Σ⁺_pose(candidate)), so the propagation cost of travelling is included. Alt: measure against
+  the propagated prior (would reward far candidates for the uncertainty their travel creates).
+- **coverage_gain = ray-cast unknown volume in the candidate frustum** through a coarse
+  (0.25 m, 10 m radius) known-space cloud the mapper now publishes at 1 Hz. Alt: frontier
+  voxel count (no occlusion, no depth); a mapper service (synchronous coupling).
+- **lambda grid {0, 0.01, 0.1, 1, 10} nats/m³ chosen from ONE probe flight**
+  (`runs/d2_probe_posecov`, excluded from evaluation): dI_pose ≈ −8…+6 nats, coverage ≈ 0…110 m³,
+  so λ·coverage ≈ dI_pose near λ = 0.1. The probe itself failed (OpenVINS diverged smoothly at
+  ~12 s, the gate passed it, PX4 followed and the vehicle fell in open space): the Stage 1c
+  undetectable-drift failure, logged as such.
+- **Step 4 runs on the image built for step 3** (before step 5's ESDF-band and speed-margin
+  changes), so it stays comparable to the Stage 2 frontier / IG references. Step 5's changes are
+  committed with this step's code but only deployed (rebuild) for the step 5 flights.

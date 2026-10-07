@@ -16,7 +16,9 @@
 
 #include <cmath>
 #include <deque>
+#include <map>
 #include <memory>
+#include <tuple>
 #include <mutex>
 
 #include <Eigen/Dense>
@@ -53,6 +55,8 @@ class OctomapMapper : public rclcpp::Node {
     slice_half_ = declare_parameter("slice_half_extent", 8.0);
     rate_ = declare_parameter("map_rate", 5.0);
     body_free_radius_ = declare_parameter("body_free_radius", 0.5);
+    band_below_ = declare_parameter("esdf_band_below", 1.0);
+    band_above_ = declare_parameter("esdf_band_above", 0.6);
     const auto esdf_topic = declare_parameter("esdf_topic", std::string("/nvblox_node/static_esdf_pointcloud"));
     tree_ = std::make_unique<octomap::OcTree>(res_);
     sub_odom_ = create_subscription<nav_msgs::msg::Odometry>(
@@ -68,6 +72,12 @@ class OctomapMapper : public rclcpp::Node {
     pub_esdf_ = create_publisher<sensor_msgs::msg::PointCloud2>(esdf_topic, 2);
     pub_front_ = create_publisher<sensor_msgs::msg::PointCloud2>("~/frontiers", 2);
     pub_cov_ = create_publisher<std_msgs::msg::Float64MultiArray>("~/coverage", 10);
+    // Coarse known-space cloud for coverage-gain ray casting in the planner (day 2):
+    // x y z occ (0 free, 1 occupied) at coarse_resolution within coarse_radius of the drone.
+    coarse_res_ = declare_parameter("coarse_resolution", 0.25);
+    coarse_radius_ = declare_parameter("coarse_radius", 10.0);
+    pub_coarse_ = create_publisher<sensor_msgs::msg::PointCloud2>("~/occupancy_coarse", 2);
+    timer_coarse_ = create_wall_timer(std::chrono::milliseconds(1000), [this] { publish_coarse(); });
     timer_ = create_wall_timer(std::chrono::milliseconds(500), [this] { publish_products(); });
     RCLCPP_INFO(get_logger(), "octomap_mapper up: res %.2f m, range %.1f m, ESDF slice z=%.2f -> %s", res_, max_range_, slice_z_,
                 esdf_topic.c_str());
@@ -127,6 +137,44 @@ class OctomapMapper : public rclcpp::Node {
     have_pose_ = true;
   }
 
+  // coarse known space (free/occupied) around the drone
+  void publish_coarse() {
+    if (!have_pose_) return;
+    const double r = coarse_radius_;
+    octomap::point3d lo((float)(drone_xy_.x() - r), (float)(drone_xy_.y() - r), (float)(slice_z_ - 3.0));
+    octomap::point3d hi((float)(drone_xy_.x() + r), (float)(drone_xy_.y() + r), (float)(slice_z_ + 3.0));
+    std::map<std::tuple<int, int, int>, float> cells;
+    for (auto it = tree_->begin_leafs_bbx(lo, hi), end = tree_->end_leafs_bbx(); it != end; ++it) {
+      const octomap::point3d c = it.getCoordinate();
+      const double s = it.getSize();
+      const bool o = tree_->isNodeOccupied(*it);
+      // a large pruned leaf covers several coarse cells: mark each
+      const int n = std::max(1, (int)std::round(s / coarse_res_));
+      for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+          for (int k = 0; k < n; ++k) {
+            const double x = c.x() - s / 2 + (i + 0.5) * s / n, y = c.y() - s / 2 + (j + 0.5) * s / n, z = c.z() - s / 2 + (k + 0.5) * s / n;
+            auto key = std::make_tuple((int)std::floor(x / coarse_res_), (int)std::floor(y / coarse_res_), (int)std::floor(z / coarse_res_));
+            auto f = cells.find(key);
+            if (f == cells.end()) cells[key] = o ? 1.f : 0.f; else if (o) f->second = 1.f;
+          }
+    }
+    sensor_msgs::msg::PointCloud2 pc;
+    pc.header.stamp = get_clock()->now();
+    pc.header.frame_id = "global";
+    sensor_msgs::PointCloud2Modifier mod(pc);
+    mod.setPointCloud2Fields(4, "x", 1, sensor_msgs::msg::PointField::FLOAT32, "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+                             "z", 1, sensor_msgs::msg::PointField::FLOAT32, "occ", 1, sensor_msgs::msg::PointField::FLOAT32);
+    mod.resize(cells.size());
+    sensor_msgs::PointCloud2Iterator<float> ix(pc, "x"), iy(pc, "y"), iz(pc, "z"), io(pc, "occ");
+    for (auto& kv : cells) {
+      *ix = (std::get<0>(kv.first) + 0.5f) * (float)coarse_res_; *iy = (std::get<1>(kv.first) + 0.5f) * (float)coarse_res_;
+      *iz = (std::get<2>(kv.first) + 0.5f) * (float)coarse_res_; *io = kv.second;
+      ++ix; ++iy; ++iz; ++io;
+    }
+    pub_coarse_->publish(pc);
+  }
+
   // nvblox-style ESDF slice + frontiers + coverage
   void publish_products() {
     if (!have_pose_) return;
@@ -142,7 +190,11 @@ class OctomapMapper : public rclcpp::Node {
       const bool o = tree_->isNodeOccupied(*it);
       (o ? v_occ : v_free) += vol;
       const octomap::point3d c = it.getCoordinate();
-      if (o && std::fabs(c.z() - slice_z_) <= 0.6) occ.emplace_back(c.x(), c.y());
+      // Obstacles that count for the 2D ESDF at the flight height: the vehicle's whole
+      // vertical extent plus margin, i.e. [slice - band_below, slice + band_above]. With
+      // +-0.6 m a 1.2 m box under a 1.45 m flight was nearly invisible and the landing
+      // gear reached it (day 2, s2_ig_2 / s3_sig0.3_3).
+      if (o && c.z() >= slice_z_ - band_below_ && c.z() <= slice_z_ + band_above_) occ.emplace_back(c.x(), c.y());
       if (!o && s <= res_ + 1e-6 && std::fabs(c.z() - slice_z_) <= band_) {
         // frontier: a free leaf with an unknown 6-neighbour
         static const int nb[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
@@ -228,7 +280,10 @@ class OctomapMapper : public rclcpp::Node {
     pub_cov_->publish(cov);
   }
 
-  double body_free_radius_ = 0.5;
+  double band_below_ = 1.0, band_above_ = 0.6;
+  double body_free_radius_ = 0.5, coarse_res_ = 0.25, coarse_radius_ = 10.0;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_coarse_;
+  rclcpp::TimerBase::SharedPtr timer_coarse_;
   double res_, max_range_, fx_, fy_, cx_, cy_, slice_z_, band_, slice_half_, rate_;
   int step_;
   Matrix3d R_CI_;

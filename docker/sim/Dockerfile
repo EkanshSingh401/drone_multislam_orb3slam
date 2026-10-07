@@ -341,7 +341,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 ARG OPEN_VINS_COMMIT=6a0935871a03cc47dee20b263ae1bd0d1234a3dd
 ARG ACTIVE_SLAM_MSGS_COMMIT=488de7ed8b647c3a28308849a9286828abc5577c
 ARG ACTIVE_SLAM_PLANNER_COMMIT=75f23dc72de259c4d39ee65c809cc7d9822c3fa4
-ARG ACTIVE_SLAM_INFORMATION_COMMIT=e94acdcdb0051ba6319237c19955b1df83349aeb
+ARG ACTIVE_SLAM_INFORMATION_COMMIT=e712fbfba1f7d839528acd0e71a3582e3c46c2de
 
 # Cloned over https: these repos are publicly readable, so the image needs no
 # credentials and no SSH agent forwarding.
@@ -459,7 +459,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     colcon build --packages-select active_slam_sim \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
         --executor sequential --parallel-workers 1 && \
-    for x in octomap_mapper exploration_planner offboard_executor.py vio_fault_injector.py vio_health_gate.py; do \
+    for x in octomap_mapper exploration_planner offboard_executor.py vio_fault_injector.py vio_health_gate.py test_coverage_gain; do \
         test -x ${WS}/install/active_slam_sim/lib/active_slam_sim/$x \
             || { echo "FATAL: active_slam_sim/$x not built"; exit 1; }; \
     done && echo "active_slam_sim built"

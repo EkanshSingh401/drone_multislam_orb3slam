@@ -29,6 +29,7 @@
 #include <std_msgs/msg/string.hpp>
 
 #include "active_slam_information/information_gain.hpp"
+#include "active_slam_sim/coverage_gain.hpp"
 #include "active_slam_information/ros/joint_cov_problem.hpp"
 #include "active_slam_information/view_geometry.hpp"
 #include "active_slam_msgs/msg/joint_covariance.hpp"
@@ -56,6 +57,7 @@ struct Candidate {
   std::vector<Vector3d> frontier_pts;
   double score = NAN, delta = NAN, cost = 0, delta_real = NAN, delta_virt = NAN;
   int n_meas_real = 0, n_meas_virt = 0;
+  double dI_pose = NAN, coverage_gain = NAN, score_pc = NAN;  // pose_cov mode terms (day 2)
   std::pair<int, int> tile{0, 0};
 };
 
@@ -70,6 +72,10 @@ class ExplorationPlanner : public rclcpp::Node {
     // a voxel and estimation margin (s64: 0.5 m left ~6 cm and a home leg touched a box).
     r_safe_ = declare_parameter("r_safe", 1.0);
     r_path_ = declare_parameter("r_path", 0.8);
+    // Speed-scaled margin (day 2 step 5): r_eff = r + margin_time * cruise_speed -- the
+    // distance covered during a reaction time at the commanded speed is added to both the
+    // path and the viewpoint clearance.
+    margin_time_ = declare_parameter("margin_time", 1.0);
     min_cluster_ = declare_parameter("min_cluster", 6);
     cell_ = declare_parameter("cluster_cell", 1.5);
     speed_ = declare_parameter("cruise_speed", 0.5);
@@ -94,7 +100,10 @@ class ExplorationPlanner : public rclcpp::Node {
     sub_front_ = create_subscription<sensor_msgs::msg::PointCloud2>(
         declare_parameter("frontier_topic", std::string("/octomap_mapper/frontiers")), 2,
         [this](sensor_msgs::msg::PointCloud2::SharedPtr m) { frontiers_ = m; });
-    if (type_ == "ig")
+    lambda_ = declare_parameter("lambda", 0.1);  // pose_cov: nats per m^3 of expected new mapped volume
+    sub_coarse_ = create_subscription<sensor_msgs::msg::PointCloud2>(
+        "/octomap_mapper/occupancy_coarse", 2, [this](sensor_msgs::msg::PointCloud2::SharedPtr m) { on_coarse(m); });
+    if (type_ == "ig" || type_ == "pose_cov")
       sub_jc_ = create_subscription<active_slam_msgs::msg::JointCovariance>(
           "/openvins/joint_covariance", 10, [this](active_slam_msgs::msg::JointCovariance::SharedPtr m) {
             if (m->stage.empty() || m->stage == "post") jc_ = m;
@@ -114,6 +123,12 @@ class ExplorationPlanner : public rclcpp::Node {
   }
 
  private:
+  void on_coarse(const sensor_msgs::msg::PointCloud2::SharedPtr m) {
+    coarse_.clear();
+    sensor_msgs::PointCloud2ConstIterator<float> x(*m, "x"), y(*m, "y"), z(*m, "z"), o(*m, "occ");
+    for (; x != x.end(); ++x, ++y, ++z, ++o) coarse_.set(*x, *y, *z, *o > 0.5f);
+  }
+
   // ---------------- ESDF slice lookup ----------------
   void on_esdf(const sensor_msgs::msg::PointCloud2::SharedPtr m) {
     std::map<std::pair<int, int>, double> g;
@@ -132,7 +147,7 @@ class ExplorationPlanner : public rclcpp::Node {
     const double L = (b - a).norm();
     for (double s = 0; s <= L; s += 0.5 * esdf_res_) {
       const double d = esdf_at(a + (b - a) * (s / std::max(L, 1e-9)));
-      if (!(d >= r_path_)) return false;  // unobserved or too close
+      if (!(d >= r_path_ + margin_time_ * speed_)) return false;  // unobserved or too close (speed-scaled)
     }
     return true;
   }
@@ -167,7 +182,7 @@ class ExplorationPlanner : public rclcpp::Node {
         for (double back = standoff_; back <= L; back += 0.2) {
           const Vector2d v = c2 - dir * back;
           const double d = esdf_at(v);
-          if (d >= r_safe_ && path_clear(drone, v)) { cd.xy = v; ok = true; break; }
+          if (d >= r_safe_ + margin_time_ * speed_ && path_clear(drone, v)) { cd.xy = v; ok = true; break; }
         }
       }
       if (!ok) continue;
@@ -267,6 +282,26 @@ class ExplorationPlanner : public rclcpp::Node {
       cd.delta_virt = gv.ok ? gv.delta : NAN;
       cd.n_meas_real = (int)m_real.size();
       cd.n_meas_virt = (int)m_virt.size();
+      // pose_cov terms (day 2, MATH_TO_CODE.md "pose-marginal objective"):
+      // dI_pose = log det Sigma_pose(now) - log det Sigma_pose+(candidate), T selects the
+      // 6-dof IMU pose (landmarks, real and virtual, marginalized out); prior is the CURRENT
+      // pose covariance, so the propagation cost of getting there counts against the gain.
+      {
+        MatrixXd Tpose = MatrixXd::Zero(6, Sa.rows());
+        Tpose.block(0, ic, 6, 6).setIdentity();
+        const asi::InformationPrior pprior(Sa, Tpose);
+        if (pprior.ok()) {
+          const auto gp = asi::evaluate(pprior, meas);
+          Eigen::LLT<MatrixXd> l0(P.Sigma.block(ic, ic, 6, 6));
+          if (gp.ok && l0.info() == Eigen::Success)
+            cd.dI_pose = 2.0 * l0.matrixL().toDenseMatrix().diagonal().array().log().sum() - gp.posterior_logdet;
+        }
+        const auto& cam = P.cameras.front();
+        const Eigen::Matrix3d R_GC = R_ItoG * cam.R_ItoC.transpose();
+        const Vector3d p_GC = cp.p_IinG + R_ItoG * (-cam.R_ItoC.transpose() * cam.p_IinC);
+        cd.coverage_gain = active_slam_sim::unknown_volume_in_view(coarse_, R_GC, p_GC, frustum_);
+        cd.score_pc = cd.dI_pose + lambda_ * cd.coverage_gain;
+      }
     }
   }
 
@@ -287,9 +322,9 @@ class ExplorationPlanner : public rclcpp::Node {
     const bool timed_out = have_goal_ && now - goal_time_ > goal_timeout_;
     if (have_goal_ && !reached && !timed_out) { publish_goal(); return; }
     auto cands = candidates(drone);
-    if (type_ == "ig") score_ig(cands);
+    if (type_ == "ig" || type_ == "pose_cov") score_ig(cands);
     std::ostringstream js;
-    js << "{\"t\":" << now << ",\"type\":\"" << type_ << "\",\"sigma_virtual\":" << sigma_l_ << ",\"drone\":[" << drone.x() << "," << drone.y() << "],\"candidates\":[";
+    js << "{\"t\":" << now << ",\"type\":\"" << type_ << "\",\"sigma_virtual\":" << sigma_l_ << ",\"lambda\":" << lambda_ << ",\"drone\":[" << drone.x() << "," << drone.y() << "],\"candidates\":[";
     int best = -1;
     for (size_t i = 0; i < cands.size(); ++i) {
       const auto& c = cands[i];
@@ -298,9 +333,14 @@ class ExplorationPlanner : public rclcpp::Node {
          << ",\"delta\":" << (std::isfinite(c.delta) ? std::to_string(c.delta) : "null")
          << ",\"delta_real\":" << (std::isfinite(c.delta_real) ? std::to_string(c.delta_real) : "null")
          << ",\"delta_virt\":" << (std::isfinite(c.delta_virt) ? std::to_string(c.delta_virt) : "null")
-         << ",\"n_real\":" << c.n_meas_real << ",\"n_virt\":" << c.n_meas_virt << "}";
+         << ",\"n_real\":" << c.n_meas_real << ",\"n_virt\":" << c.n_meas_virt
+         << ",\"dI_pose\":" << (std::isfinite(c.dI_pose) ? std::to_string(c.dI_pose) : "null")
+         << ",\"coverage_gain\":" << (std::isfinite(c.coverage_gain) ? std::to_string(c.coverage_gain) : "null")
+         << ",\"score_pc\":" << (std::isfinite(c.score_pc) ? std::to_string(c.score_pc) : "null") << "}";
       if (type_ == "frontier") {
         if (best < 0 || c.cost < cands[best].cost) best = (int)i;  // nearest (travel + turning)
+      } else if (type_ == "pose_cov") {
+        if (std::isfinite(c.score_pc) && (best < 0 || c.score_pc > cands[best].score_pc)) best = (int)i;  // max dI_pose + lambda*cov
       } else if (std::isfinite(c.score) && (best < 0 || c.score < cands[best].score)) {
         best = (int)i;  // lowest posterior log-det
       }
@@ -348,6 +388,10 @@ class ExplorationPlanner : public rclcpp::Node {
   std::unique_ptr<PropagatorAccess> prop_;
   bool have_goal_ = false, done_ = false;
   int empty_replans_ = 0, max_attempts_ = 2;
+  double lambda_ = 0.1, margin_time_ = 1.0;
+  active_slam_sim::CoarseMap coarse_{0.25};
+  active_slam_sim::FrustumParams frustum_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_coarse_;
   std::map<std::pair<int, int>, int> attempts_;
   double grace_ = 10.0, airborne_since_ = -1;
   Vector2d goal_xy_{0, 0};
