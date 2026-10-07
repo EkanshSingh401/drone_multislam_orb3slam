@@ -338,7 +338,7 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # all phase-3 evaluation (PATCHES.md s47); run_subscribe_msckf is unchanged.
 # 5b14b93 adds DEBUG-level scene-degradation logging ([FI] [MSCKF] [TRACK] [GRID]);
 # estimator output verified byte-identical to 5aa2c83 (PATCHES.md s49).
-ARG OPEN_VINS_COMMIT=9eabeb31c41663a36b11039dddd83205a464c2df
+ARG OPEN_VINS_COMMIT=6a0935871a03cc47dee20b263ae1bd0d1234a3dd
 ARG ACTIVE_SLAM_MSGS_COMMIT=488de7ed8b647c3a28308849a9286828abc5577c
 ARG ACTIVE_SLAM_PLANNER_COMMIT=75f23dc72de259c4d39ee65c809cc7d9822c3fa4
 ARG ACTIVE_SLAM_INFORMATION_COMMIT=e94acdcdb0051ba6319237c19955b1df83349aeb
@@ -448,6 +448,21 @@ RUN set -eux; \
              echo "  the library links active_slam_msgs. Check OV_JOINT_COV_AVAILABLE."; \
              exit 1; }; \
     echo "joint covariance publisher IS compiled in (DT_NEEDED + topic literal)"
+
+# Closed-loop sim package (PATCHES s64): OctoMap mapper behind the nvblox
+# interface, frontier / IG exploration planners, PX4 offboard executor. Lives in
+# this repo; built after ov_msckf and active_slam_information, which it links.
+COPY active_slam_sim ${WS}/src/active_slam_sim
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    source ${WS}/install/setup.bash && \
+    cd ${WS} && \
+    colcon build --packages-select active_slam_sim \
+        --cmake-args -DCMAKE_BUILD_TYPE=Release \
+        --executor sequential --parallel-workers 1 && \
+    for x in octomap_mapper exploration_planner offboard_executor.py; do \
+        test -x ${WS}/install/active_slam_sim/lib/active_slam_sim/$x \
+            || { echo "FATAL: active_slam_sim/$x not built"; exit 1; }; \
+    done && echo "active_slam_sim built"
 
 # -----------------------------------------------------------------------------
 # 10. Runtime environment

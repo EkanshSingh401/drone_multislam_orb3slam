@@ -11,7 +11,7 @@ evidence; this file is the summary.
 
 | | |
 |---|---|
-| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ see `git log` (PATCHES §50–61). `amd64-gpu` no longer tracks it (local `68c013b`, origin `ad9b259`). History is linear on top of the Mac's final commit `4624988`. |
+| Main repo | `EkanshSingh401/drone_multislam_orb3slam`, branch **`phase3/openvins-sim`** @ see `git log` (PATCHES §50–64; overnight run: DECISIONS.md, MORNING_REPORT.md). `amd64-gpu` no longer tracks it (local `68c013b`, origin `ad9b259`). History is linear on top of the Mac's final commit `4624988`. |
 | OpenVINS fork | `EkanshSingh401/open_vins`, branch `openvins-integration` @ **`5b14b93`** (pushed), pinned by commit in `docker/sim/Dockerfile` (`OPEN_VINS_COMMIT`). |
 | Other forks | `active_slam_msgs` `a0790aa`, `active_slam_planner` `f56e114`, `active_slam_information` `e225068` (pinned in the Dockerfile). |
 | Who runs experiments | **This host only.** The Mac is retired from experiments. |
@@ -67,6 +67,13 @@ on the ground within ~1 s) — the same hazard applies on hardware.
 **Note:** predicted vs realized is measured against OpenVINS's own covariance, so
 it validates agreement with the filter's belief; NEES separately measures whether
 that belief is true (orientation still overconfident, §58–§59).
+
+**Closed loop: how to run (§64, image-built since the overnight Stage 0).**
+`docker exec drone-sim /out/cl/cl_flight.sh <frontier|ig> /out/cl/<name>` (copy of
+`docker/tools/closed_loop/cl_flight.sh`; brings up the depth rig in the validation
+world, sets PX4 vision-only, starts OpenVINS live + converter + mapper + planner +
+sim-only GT watchdog + executor, records `flight.bag`). Evaluate with
+`cl_eval.py`, `cl_report.py`, `clearance.py`, `gt_window_eval.py`.
 
 ---
 
