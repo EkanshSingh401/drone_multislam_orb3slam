@@ -12,6 +12,7 @@
 # where it is used, otherwise keyframes from a previous run stay in its map and
 # the exported trajectory mixes runs.
 set -eo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/root_preflight.sh"   # refuse if / < 5 GB free (s61)
 
 
 N="${1:-${N:-5}}"

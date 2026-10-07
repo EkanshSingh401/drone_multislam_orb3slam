@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ig_prediction_validation</name>
+  <version>0.1.0</version>
+  <description>Step 4 (PATCHES s61): predicted vs realized information gain over flight segments, with and without OpenVINS propagation.</description>
+  <maintainer email="ekanshsingh38@gmail.com">Ekansh Singh</maintainer>
+  <license>GPL-3.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>active_slam_msgs</depend>
+  <depend>ov_core</depend>
+  <depend>ov_msckf</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

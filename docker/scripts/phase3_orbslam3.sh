@@ -10,6 +10,7 @@
 #     cam_stamps.txt  left-image stamps of the input bag (dropped-frame check)
 #     orb_events.json orb_events.py report (init/VIBA/resets, usable time, ATE)
 set -eo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/root_preflight.sh"   # refuse if / < 5 GB free (s61)
 
 EXP="${1:?experiment dir}"; MODES="${2:-both}"; RATE="${PLAY_RATE:-0.5}"
 COMPOSE="docker compose -f docker/compose.yaml"

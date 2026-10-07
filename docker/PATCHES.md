@@ -2746,3 +2746,68 @@ detect that mismatch. Caveat: the message carries no observation history, so
 pairs are "visible from the clone", not "actually observed by OpenVINS";
 H depends only on the linearization point, so this does not affect the check.
 Fork commits are local (not pushed; Dockerfile pins unchanged).
+
+## 61. Planner steps 3–4: C++ fisher_ig_estimator; predicted vs realized information gain
+
+**Pins / image.** Forks pushed and pinned: open_vins `154c3e4` (s60 linearization
+point + this section's param fix), active_slam_msgs `5c152db`,
+active_slam_information `b9064ce` (node), active_slam_planner `75f23dc`
+(launch). Image rebuilt; the container's own binaries were used for the node check.
+
+**Root-disk preflight.** `docker/scripts/root_preflight.sh`, sourced by
+`run_experiment.sh`, `phase3_openvins.sh`, `phase3_orbslam3.sh`: exit 6 if / has
+< `ROOT_MIN_FREE_GB` (5) GB free. Tested both ways.
+
+**Fork fix found on the way.** The serial runner auto-declares every
+command-line override (`automatically_declare_parameters_from_overrides`), so
+`-p joint_cov_rate:=…` made `ROS2Visualizer` throw
+`ParameterAlreadyDeclaredException`: the joint-covariance parameters could never
+be overridden there. Now declared only if absent. Publisher depth 2 → 100: at
+`joint_cov_rate 0` the recorder now gets every message (953/953 updates).
+
+**Step 3, `fisher_ig_estimator` (C++).** In active_slam_information
+(`src/ros/fisher_ig_estimator_node.cpp`, built only in a ROS workspace with the
+messages). Shared conversion header `ros/joint_cov_problem.hpp`: JointCovariance
+→ Σ (message order), IMU column, current pose, cameras, landmarks with
+representation blocks re-indexed from OpenVINS state ids to message columns,
+`T_metric` = IMU (15) + landmark global XYZ (MATH_TO_CODE.md). Candidate ring as
+the Python placeholder (24 × {0, 0.5} m, r = 2 m, facing the current
+position); both cameras; σ = 1 px (= `up_slam_sigma_px`); `score =
+−posterior_logdet` (the selector maximizes, so it ranks by posterior log-det),
+`information_gain = delta`, `is_placeholder = false`,
+`scoring_method = D_opt_metric_map_posterior_logdet_v1`. Same node name and
+topic (`/fisher_ig_estimator/scored_viewpoints`); `active_slam.launch.py` now
+launches it. Library tests 134/134 pass. End-to-end in the rebuilt image
+(serial replay of 230119 publishing joint covariance): scores published with
+18–50 landmarks, max gain 12–88 nats, the best candidate changes over the flight
+(33 → 35 → 34 → 26 → 39 → 38). No ESDF: `is_reachable = true`, `clearance = −1`.
+
+**Step 4, prediction validation** (`docker/tools/ig_prediction_validation`,
+`run_step4.sh`). 6 held-out flights (§59), serial OpenVINS at the system setting
+(every other frame), joint covariance at every update. Segments of ~1.06 s (16
+processed frames), one per second over the GT airborne window. Same marginal at
+both ends: IMU (15) + global XYZ of landmarks present in both M0 and M1.
+Realized = L0 − L1. (a) as built: common prior M0, predicted measurements from
+every processed frame's pose (OpenVINS state file = 15 Hz effective), mapped onto
+the current IMU pose. (b) M0's covariance propagated with OpenVINS's own
+`Propagator::predict_and_compute` (Φ, Qd; rk4; config noise) over the segment's
+IMU data, a clone appended at each processed frame and each frame's measurements
+attached to it. 203 segments with realized gain > 0 (28 excluded: ≤ 0, i.e.
+landmark-free or turnover segments).
+
+| scene | segs | realized median (nats) | (a) pred/real median [IQR] | (b) pred/real median [IQR] | propagation cost |
+|---|---|---|---|---|---|
+| validation | 101 | 44.6 | 1.27 [1.17, 1.47] | 1.11 [1.05, 1.19] | 11.1 |
+| forest | 102 | 20.2 | 1.38 [1.20, 1.66] | 1.09 [1.00, 1.16] | 8.7 |
+| all | 203 | 32.6 | 1.31 [1.17, 1.55] | 1.09 [1.01, 1.18] | 10.3 |
+
+Ignoring propagation accounts for about two thirds of the optimism (1.31 →
+1.09). The remaining ratio (b) depends on motion and feature count (Spearman,
+all segments): angular speed −0.55, speed −0.50, common landmarks +0.60 —
+more optimistic when slow and feature-rich. Not explained: `max_slam_in_update`
+(25) is NOT a cap (VioManager updates all SLAM features in sequential batches),
+so that is ruled out. Untested candidates: landmarks predicted visible are
+assumed measured in every frame (OpenVINS measures only those tracked and passing
+χ²), and OpenVINS's own overconfidence in slow segments (§58). Known omission in
+both predictions: MSCKF features and newly initialized SLAM features also inform
+the IMU state in reality.

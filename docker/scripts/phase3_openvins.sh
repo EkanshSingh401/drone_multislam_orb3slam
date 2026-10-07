@@ -30,6 +30,7 @@
 #              /openvins/joint_covariance -- separate from the determinism pair so
 #              the extra subscriber cannot perturb it.
 set -eo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/root_preflight.sh"   # refuse if / < 5 GB free (s61)
 
 MODE="${1:?mode}"; EXP="${2:?experiment dir}"; G="${3:-9.81}"
 COMPOSE="docker compose -f docker/compose.yaml"

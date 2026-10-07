@@ -338,10 +338,10 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # all phase-3 evaluation (PATCHES.md s47); run_subscribe_msckf is unchanged.
 # 5b14b93 adds DEBUG-level scene-degradation logging ([FI] [MSCKF] [TRACK] [GRID]);
 # estimator output verified byte-identical to 5aa2c83 (PATCHES.md s49).
-ARG OPEN_VINS_COMMIT=7da42fade69b32284753bbc69b696883382b0237
-ARG ACTIVE_SLAM_MSGS_COMMIT=a0790aafdb8dffa0eb33a0e7f471071d1edb9426
-ARG ACTIVE_SLAM_PLANNER_COMMIT=f56e1146256f009bc71a3b4c644afc8c7f2dcd14
-ARG ACTIVE_SLAM_INFORMATION_COMMIT=e2250686130f0d92adfb2bd126735638dddaf424
+ARG OPEN_VINS_COMMIT=154c3e4b827c0f2a545885eeb44549a42a1a2046
+ARG ACTIVE_SLAM_MSGS_COMMIT=5c152dbe56496378817418e760574914b4766832
+ARG ACTIVE_SLAM_PLANNER_COMMIT=75f23dc72de259c4d39ee65c809cc7d9822c3fa4
+ARG ACTIVE_SLAM_INFORMATION_COMMIT=b9064cef816180215123f3d23aeb72b6001197b3
 
 # Cloned over https: these repos are publicly readable, so the image needs no
 # credentials and no SSH agent forwarding.
