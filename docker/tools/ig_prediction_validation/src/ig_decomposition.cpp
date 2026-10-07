@@ -19,6 +19,7 @@
 //   under = msckf + init             gain the prediction never models
 // Records: one JSON line per predicted-visible (frame, landmark, camera).
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -63,6 +64,47 @@ static std::string jn(double x, const char* fmt = "%.6f") {
   return b;
 }
 
+// p(used) baseline (PATCHES s63): additive logistic model over binned features,
+// fitted by fit_usage.py; file layout in usage_model.txt.
+struct UsageModel {
+  std::vector<std::vector<double>> edges;  // view_angle_deg, depth, border_px
+  std::vector<double> coef;
+  bool ok = false;
+  static int bin_of(double x, const std::vector<double>& e) {
+    if (!std::isfinite(x)) return (int)e.size() - 1;  // unknown bin
+    int b = (int)(std::upper_bound(e.begin(), e.end(), x) - e.begin()) - 1;
+    return std::max(0, std::min(b, (int)e.size() - 2));
+  }
+  double p(double view, double depth, double border, bool both) const {
+    if (!ok) return 1.0;
+    double z = coef[0];
+    int col = 1;
+    const double xs[3] = {view, depth, border};
+    for (int k = 0; k < 3; ++k) {
+      const int b = bin_of(xs[k], edges[k]);
+      if (b > 0) z += coef[col + b - 1];
+      col += (int)edges[k].size() - 1;
+    }
+    if (both) z += coef[col];
+    return 1.0 / (1.0 + std::exp(-z));
+  }
+  void load(const char* path) {
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+      if (line.empty() || line[0] == '#') continue;
+      std::istringstream ss(line);
+      std::string key;
+      int n;
+      ss >> key >> n;
+      std::vector<double> v(n);
+      for (auto& x : v) ss >> x;
+      if (key == "coef") coef = v; else edges.push_back(v);
+    }
+    ok = edges.size() == 3 && !coef.empty();
+  }
+};
+
 struct SlamEv { int n0 = 0, n1 = 0; std::string outcome; double chi2 = NAN, thr = NAN; };
 static long long tkey(double t) { return std::llround(t * 1e6); }
 
@@ -74,6 +116,11 @@ int main(int argc, char** argv) {
   const double seg_len = std::atof(argv[6]), seg_every = std::atof(argv[7]), tw0 = std::atof(argv[8]), tw1 = std::atof(argv[9]);
   const std::string scene = argv[10];
   FILE* rec = std::fopen(argv[11], "w");
+  UsageModel usage;
+  if (argc > 12) {
+    usage.load(argv[12]);
+    if (!usage.ok) { std::fprintf(stderr, "bad usage model %s\n", argv[12]); return 2; }
+  }
 
   // ---- messages by (time, stage) ----
   std::map<long long, std::map<std::string, active_slam_msgs::msg::JointCovariance>> jc;
@@ -232,7 +279,7 @@ int main(int argc, char** argv) {
     const MatrixXd T0 = P0.T_metric(&common);
     MatrixXd Tb = MatrixXd::Zero(T0.rows(), S.cols());
     Tb.leftCols(T0.cols()) = T0;
-    std::vector<asi::PredictedMeasurement> m_all, m_used;
+    std::vector<asi::PredictedMeasurement> m_all, m_used, m_pused, m_a;
     int n_vis = 0, n_used = 0, n_tracked = 0;
     for (size_t k = 0; k < ftimes.size(); ++k) {
       auto it = est.find(ftimes[k]);
@@ -252,12 +299,21 @@ int main(int argc, char** argv) {
       const auto& evk = ev[tkey(ftimes[k])];
       for (const auto& lm : P0.landmarks) {
         if (!common.count(lm.id)) continue;
+        int n_pred_cams = 0;  // both-cameras vs one-camera term of the usage model
+        for (const auto& cam : P0.cameras) {
+          asi::PredictedMeasurement tmp;
+          n_pred_cams += asi::predict_measurement(fp, fp, clone_col[k], cam, lm, noise, nullptr, &tmp);
+        }
         for (size_t c = 0; c < P0.cameras.size(); ++c) {
           const auto& cam = P0.cameras[c];
           asi::PredictedMeasurement pm;
           if (!asi::predict_measurement(fp, fp, clone_col[k], cam, lm, noise, nullptr, &pm)) continue;
           n_vis++;
           m_all.push_back(pm);
+          {  // (a) as built: common prior, mapped onto the current IMU pose
+            asi::PredictedMeasurement pa_m;
+            if (asi::predict_measurement(P0.current, fp, P0.imu_col, cam, lm, noise, nullptr, &pa_m)) m_a.push_back(pa_m);
+          }
           auto e = evk.find(lm.id);
           const bool tracked = e != evk.end();
           const int ncam = tracked ? (c == 0 ? e->second.n0 : e->second.n1) : 0;
@@ -294,11 +350,19 @@ int main(int argc, char** argv) {
                        jn(w_fr, "%.5f").c_str(), jn(v_fr, "%.5f").c_str(), (int)tracked, ncam,
                        tracked ? e->second.outcome.c_str() : "not_tracked", jn(tracked ? e->second.chi2 : NAN, "%.4f").c_str(),
                        jn(tracked ? e->second.thr : NAN, "%.4f").c_str(), (int)used);
+          // (b) + p(used): expected information = p * information  ->  sigma / sqrt(p)
+          asi::PredictedMeasurement pw = pm;
+          pw.sigma /= std::sqrt(std::max(1e-6, usage.p(view_angle, p_C.z(), border, n_pred_cams == 2)));
+          m_pused.push_back(pw);
         }
       }
     }
     const asi::InformationPrior prior_b(S, Tb);
     const auto g_all = asi::evaluate(prior_b, m_all), g_used = asi::evaluate(prior_b, m_used);
+    const auto g_pused = asi::evaluate(prior_b, m_pused);
+    const auto g_a = asi::evaluate(asi::InformationPrior(P0.Sigma, T0), m_a);
+    const double pred_a = g_a.ok ? g_a.delta : NAN;
+    const double pred_pused = g_pused.ok ? L0 - g_pused.posterior_logdet : NAN;
     double ang = 0, dist = 0;
     {
       const std::array<double, 8>* prev = nullptr;
@@ -316,10 +380,10 @@ int main(int argc, char** argv) {
     std::printf(
         "{\"scene\":\"%s\",\"t0\":%.3f,\"t1\":%.3f,\"frames\":%zu,\"common\":%zu,\"stages_ok\":%d,\"realized\":%.6f,"
         "\"real_prop\":%.6f,\"real_msckf\":%.6f,\"real_slam\":%.6f,\"real_init\":%.6f,\"real_marg\":%.6f,"
-        "\"pred_all\":%s,\"pred_used\":%s,\"over\":%s,\"under\":%.6f,\"n_visible\":%d,\"n_tracked\":%d,\"n_used\":%d,"
+        "\"pred_a\":%s,\"pred_pused\":%s,\"pred_all\":%s,\"pred_used\":%s,\"over\":%s,\"under\":%.6f,\"n_visible\":%d,\"n_tracked\":%d,\"n_used\":%d,"
         "\"ang_speed\":%.5f,\"speed\":%.5f}\n",
         scene.c_str(), t0, t1, ftimes.size(), common.size(), (int)stages_ok, L0 - L1, real["prop"], real["msckf"], real["slam"],
-        real["init"], real["marg"], jn(pa).c_str(), jn(pu).c_str(), jn(pa - pu).c_str(), real["msckf"] + real["init"], n_vis, n_tracked, n_used, ang / (t1 - t0),
+        real["init"], real["marg"], jn(pred_a).c_str(), jn(pred_pused).c_str(), jn(pa).c_str(), jn(pu).c_str(), jn(pa - pu).c_str(), real["msckf"] + real["init"], n_vis, n_tracked, n_used, ang / (t1 - t0),
         dist / (t1 - t0));
   }
   std::fclose(rec);

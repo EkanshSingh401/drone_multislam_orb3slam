@@ -317,6 +317,13 @@ Later / noted, not started:
 - Basalt's Sim(3) scale is +0.4 to +2.2% on every bag (§59): its calibration is
   verified honoured (pinhole, our intrinsics, time offset 0), so not a config
   mismatch; internal to Basalt, not pursued.
+- **Landmark usage model is sim-only (§63).** p(used) (additive logistic over
+  binned viewing-angle change, depth, border distance, both-cameras term;
+  `docker/out/diag_s63/usage_model.*`) was fitted on near-noise-free Gazebo images,
+  where usage is ~92% and losing the stereo partner looks almost random. It must
+  be refit on real D455 data (blur, exposure, texture). This analytic model is the
+  BASELINE any learned feature-quality predictor has to beat (held-out Brier 0.0750
+  vs 0.0756 for a constant; predicted/realized gain 1.03 with it vs 1.11 without).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

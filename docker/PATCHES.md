@@ -2878,3 +2878,76 @@ chi2, chi2_thr, used. All lines valid JSON.
 **Scope reminder.** Predicted vs realized compares against OpenVINS's own
 covariance: it validates agreement with the filter's belief, not that the
 belief is true (NEES does that; orientation is still overconfident, s58–s59).
+
+## 63. Analytic landmark-usage baseline p(used); predictor weighting; distribution shift (path C)
+
+**Image.** Forks pushed and pinned (open_vins `9eabeb3`, active_slam_msgs
+`488de7e`, active_slam_information `e94acdc`); image rebuilt, so the [SLAMEV]
+logging and `joint_cov_stages` are available in future runs (both off by default
+except at DEBUG verbosity).
+
+**1. Model** (`docker/tools/usage_model/fit_usage.py`; model in
+`usage_model.{json,txt}`). Additive logistic model over one-hot bins — a
+binned table without interactions, L2-regularized IRLS — of viewing-angle change
+vs the anchor ray {0,1,2,5,10,∞} deg, depth {0,2,4,8,12,∞} m, border distance
+{0,20,50,100,∞} px, plus a both-cameras term (landmark predicted visible in both
+cameras at that frame). Train: 230119, 230613 (validation), 231552, 232057
+(forest), 127 299 records; test: 231052, 232529, 63 536 records.
+
+| | log-loss | Brier |
+|---|---|---|
+| model, held-out | 0.2807 | 0.0750 |
+| constant 0.919, held-out | 0.2846 | 0.0756 |
+
+Barely better than a constant. Calibrated to within ~0.01 above p = 0.8.
+Adding the other camera's border distance did not help (Brier 0.0746). Why:
+per (frame, landmark) the pattern is both cameras used 84%, exactly one 15%
+(split ~evenly cam0/cam1), neither 0.4% — losing the stereo partner looks almost
+independent of geometry in these sim images. The one strong signal, landmark
+predicted visible in only one camera (used 2%), is rare (48 test records) and
+under-learned by the regularized term.
+
+**2. Predictor weighting.** `ig_decomposition` (new optional arg: usage model)
+scales each predicted measurement's information by p(used) (σ → σ/√p), and now
+also reports the as-built prediction. Held-out flights, predicted / realized:
+
+| | median | IQR (width) | p10–p90 |
+|---|---|---|---|
+| as built (no propagation) | 1.308 | 1.190–1.577 (0.387) | 1.10–1.90 |
+| + OpenVINS propagation | 1.111 | 1.037–1.172 (0.135) | 0.90–1.26 |
+| + propagation + p(used) | **1.031** | 0.959–1.090 (0.131) | 0.84–1.16 |
+| oracle: only measurements actually used | 1.004 | 0.979–1.019 (0.040) | 0.86–1.11 |
+
+Ratio target met (1.03). Spread target NOT met: the IQR is unchanged
+(0.135 → 0.131). The oracle shows the reachable spread is ~0.04; the gap is
+*which* measurements are lost per segment, which a mean usage rate cannot
+predict. Validation alone 1.054 [1.005, 1.106]; forest 1.015 [0.901, 1.062].
+
+**3. Distribution shift: path C** (`fly_path.py --path-version C`, new; A and B
+unchanged). Strafe each side of the square with yaw perpendicular to travel
+(camera looking sideways, maximum parallax), and swing yaw +60/−60 deg at every
+corner; ~84 s of legs. Recorded 2 validation
+(`experiment_d455_pathC_validation_20261006-233323`: 033436, 034142) and 2
+forest (`experiment_d455_pathC_20261006-234719`: 034842, 035549), IMU stamps
+corrected at source, run through the instrumented serial OpenVINS +
+decomposition. Records with viewing-angle change > 10 deg: **6.4%** (training
+flights 0.6%), > 5 deg 12.6% (5.0%).
+
+Usage model on path C (230 943 records): Brier 0.0719 vs 0.0714 for the
+constant — slightly WORSE than a constant. It predicts lower usage at 5–10 deg
+(0.88) and in the 0.5–0.9 bins, but observed usage is not lower: > 10 deg
+**0.937**, 5–10 deg 0.915, < 5 deg 0.922. Large viewpoint changes do not reduce
+usage in sim; the trained penalties did not generalize. One-camera-visible:
+used 0.108 observed vs 0.893 predicted (n = 213). Usage: validation 0.940,
+forest 0.896.
+
+Gain prediction on path C (264 segments): as built 1.326; + propagation 1.065;
++ propagation + p(used) **0.987** [0.851, 1.063]; oracle 0.992 [0.908, 1.008].
+The weighted predictor stays near 1 under the shift, because p(used) is ~0.92
+everywhere; its benefit is the mean, not the per-landmark ranking.
+
+**Conclusion.** In sim the analytic p(used) is essentially a constant ≈ 0.92
+per camera (with a real but rare one-camera-visible effect). As a gain
+correction it removes the bias (1.11 → 1.03, and 0.99 on path C); it cannot
+reduce the spread. HANDOFF records that it must be refit on real D455 data and
+is the baseline a learned feature-quality predictor has to beat.

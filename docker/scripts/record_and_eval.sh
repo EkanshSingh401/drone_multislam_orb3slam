@@ -91,7 +91,7 @@ else
     # at 0.5 MB/s. The length is a deliberately generous per-path budget
     # (path A measures 65-72 s, path B ~3 min); EXPECTED_SIM_S overrides it.
     if [[ "${RECORD_SENSORS:-0}" == "1" ]]; then BAG_RATE_B=$((2 * 848 * 480 * 30)); else BAG_RATE_B=500000; fi
-    case "${PATH_VERSION:-A}" in B|b) DEF_SIM_S=300 ;; *) DEF_SIM_S=120 ;; esac
+    case "${PATH_VERSION:-A}" in B|b) DEF_SIM_S=300 ;; C|c) DEF_SIM_S=200 ;; *) DEF_SIM_S=120 ;; esac
     EXPECTED_SIM_S="${EXPECTED_SIM_S:-${DEF_SIM_S}}"
     NEED_B=$(( 3 * BAG_RATE_B * EXPECTED_SIM_S ))
     FREE_B=$(( $(df --output=avail -B1 "${RUNDIR}" | tail -1) ))

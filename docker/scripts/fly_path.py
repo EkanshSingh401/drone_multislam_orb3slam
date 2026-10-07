@@ -72,8 +72,8 @@ class ScriptedFlight(Node):
         self.alt = alt
         self.leg_time = leg_time
         self.path_version = path_version.strip().upper()
-        if self.path_version not in ("A", "B"):
-            raise ValueError(f"unknown path version {path_version!r}; expected A or B")
+        if self.path_version not in ("A", "B", "C"):
+            raise ValueError(f"unknown path version {path_version!r}; expected A, B or C")
         self.settle_time = settle_time
 
         prefix = f"/{ns}" if ns else ""
@@ -116,8 +116,8 @@ class ScriptedFlight(Node):
         # NED waypoints. PX4 local frame is North-East-DOWN, so "up" is negative z.
         # Each entry is (north, east, down, yaw, dwell_seconds); dwell defaults
         # to leg_time so path A keeps its original timing exactly.
-        self.legs = (self._legs_path_a() if self.path_version == "A"
-                     else self._legs_path_b())
+        self.legs = {"A": self._legs_path_a, "B": self._legs_path_b,
+                     "C": self._legs_path_c}[self.path_version]()
 
         self.timer = self.create_timer(1.0 / SETPOINT_HZ, self._tick)
         self.get_logger().info(
@@ -190,6 +190,30 @@ class ScriptedFlight(Node):
                 legs.append((s, 0.0, nz, 0.0, self.leg_time))
         # Return to the origin at the base altitude so landing is predictable.
         legs.append((0.0, 0.0, -base, 0.0, self.leg_time))
+        return legs
+
+    def _legs_path_c(self):
+        """Path C: viewpoint swings (PATCHES s63, distribution-shift test for the
+        landmark usage model). Large viewing-angle changes on tracked landmarks
+        need LATERAL translation relative to their depth while they stay
+        anchored -- pure rotation barely changes a landmark's viewing ray. So:
+          * each side of the square is flown strafing, yaw held perpendicular to
+            the direction of travel (camera looking sideways = maximum parallax),
+            at side/leg_time speed;
+          * at every corner the airframe swings yaw +60 deg then -60 deg about
+            the strafing heading and back, a large yaw change that sweeps
+            landmarks across the image and out of view.
+        """
+        s, z, L = self.side, -abs(self.alt), self.leg_time
+        corners = [(0.0, 0.0), (s, 0.0), (s, s), (0.0, s), (0.0, 0.0)]
+        swing, hold = math.radians(60.0), 0.5 * L
+        legs = [(0.0, 0.0, z, 0.0, L)]
+        for (n0, e0), (n1, e1) in zip(corners[:-1], corners[1:]):
+            yaw = math.atan2(e1 - e0, n1 - n0) + math.pi / 2.0  # look sideways
+            for dy in (0.0, swing, -swing, 0.0):                  # swings at the corner
+                legs.append((n0, e0, z, yaw + dy, hold))
+            legs.append((n1, e1, z, yaw, L))                       # strafe the side
+        legs.append((0.0, 0.0, z, 0.0, L))
         return legs
 
     # --- callbacks -----------------------------------------------------------
@@ -388,7 +412,7 @@ def main() -> int:
     ap.add_argument("--leg-time", type=float, default=12.0, help="seconds per leg")
     ap.add_argument("--settle-time", type=float, default=3.0,
                     help="seconds to hold after the climb")
-    ap.add_argument("--path-version", default="A", choices=["A", "B", "a", "b"],
+    ap.add_argument("--path-version", default="A", choices=["A", "B", "C", "a", "b", "c"],
                     help="A = original square at fixed altitude (default); "
                          "B = three figure-eight laps at three altitudes with "
                          "yaw following the velocity and alternating dwell, to "
