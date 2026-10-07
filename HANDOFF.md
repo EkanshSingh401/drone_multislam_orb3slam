@@ -360,6 +360,14 @@ Later / noted, not started:
   be refit on real D455 data (blur, exposure, texture). This analytic model is the
   BASELINE any learned feature-quality predictor has to beat (held-out Brier 0.0750
   vs 0.0756 for a constant; predicted/realized gain 1.03 with it vs 1.11 without).
+- **Overnight 2026-10-07 (MORNING_REPORT.md, §65–§66):** (1) IG planner contacts
+  (2/17 validation IG flights) — margins/planner need work before more comparisons;
+  (2) post-landing disarm missed in 17/32 flights (sim watchdog disarmed on the ground):
+  vision-only PX4 + OpenVINS ground divergence is a flyaway risk on hardware;
+  (3) IG objective ~95% virtual-landmark gain at every sigma_l tried (0.01–3 m);
+  (4) forest coverage metric decreasing over time — verify before using Stage 4;
+  (5) VIO jump/drift faults: PX4 follows them unless gated (vio_health_gate); slow drift
+  needs a second sensor.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

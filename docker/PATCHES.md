@@ -3086,3 +3086,17 @@ rerun armed) — counted as an intervention in the protocol.
 **1d — full-covariance NEES** for closed-loop flights: `cl_nees.py` extracts the IMU
 pose block of every recorded joint covariance, then diag (all states, and the subset)
 and full NEES. i4 (§64): ori diag 4.74 → full 6.18, rp 5.16 → 7.79, pos 0.50 → 0.60.
+
+## 66. Overnight Stages 2–4: frontier vs IG (validation), sigma_l sweep, forest
+
+Protocol in HANDOFF (written before running). Harness `docker/tools/closed_loop/`
+(`run_batch.sh` + `flight_summary.py`), lists and raw JSON in `docs/overnight/`,
+tables `docs/overnight/aggregate.md` (median [min–max]), plot
+`docs/overnight/stage3_tradeoff.png`. Summary and caveats: `MORNING_REPORT.md`.
+Key findings: IG explores ~50% more volume in 180 s than frontier (2000 vs 1350 m³),
+flies ~3x farther, with ~2x ATE (0.034 vs 0.019 m) and higher orientation NEES (full
+9.1 vs 3.8); 2 IG contacts in 17 validation IG flights (0/5 frontier); the IG
+objective is ~91–97% virtual-frontier-landmark gain across sigma_l 0.01–3 m; the
+sweep is flat within the spread for coverage/ATE; forest coverage metric suspect
+(known volume decreasing); post-landing disarm missed in 17/32 flights (sim-only
+watchdog disarmed on the ground).
