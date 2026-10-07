@@ -1,0 +1,3 @@
+d3_diag_pc0.01 pose_cov validation LAMBDA=0.01
+d3_diag_pc1.0 pose_cov validation LAMBDA=1.0
+d3_diag_path0.01 pose_cov validation LAMBDA=0.01 YAW_SAMPLES=8 PATH_SPACING=0.5

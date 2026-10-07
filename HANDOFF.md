@@ -372,6 +372,11 @@ Later / noted, not started:
   log gain above a ~9 mm crossover); coverage report fixed; new `pose_cov` planner mode and λ
   sweep (§69); IG collisions traced to an ESDF-band blind spot for low obstacles under the
   vehicle (fixed: band 1.0 m below the slice) + speed-scaled margins (§70).
+- **Day 3 (§71, REPORT day 3):** real-landmark visibility is low because candidates face unknown
+  space (92% FOV failures; predictor validated vs GT); pose term split logged (a meas / b travel);
+  new pose_cov candidate set `yaw_samples`/`path_spacing` (old = 1 / 0); NEES jump at λ ≥ 1 is the
+  home phase (ESDF-guard hover stalls, no timeout; low yaw rate), not exploration. Step-5 run:
+  `docs/day3/d3_step5.list` → `/out/cl/d3_step5_results.jsonl`.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

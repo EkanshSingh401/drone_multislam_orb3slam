@@ -1,0 +1,350 @@
+{
+ "flights": [
+  {
+   "flight": "d2_lam0.0_1",
+   "n": 766,
+   "nees_ori_mean": 3.726752977521932,
+   "nees_ori_median": 2.51417686,
+   "nees_rp_mean": 4.625958774432611,
+   "yaw_rate_mean": 0.4901401880959058,
+   "speed_mean": 0.12472689084958555,
+   "n_slam_mean": 38.75456919060052,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.7637075718015666,
+   "frac_n_slam_lt_10": 0.06135770234986945
+  },
+  {
+   "flight": "d2_lam0.0_2",
+   "n": 773,
+   "nees_ori_mean": 5.013757238973998,
+   "nees_ori_median": 3.67604436,
+   "nees_rp_mean": 11.654159843742496,
+   "yaw_rate_mean": 0.48735668315378733,
+   "speed_mean": 0.12634248749573254,
+   "n_slam_mean": 36.41914618369987,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.7606727037516171,
+   "frac_n_slam_lt_10": 0.12289780077619664
+  },
+  {
+   "flight": "d2_lam0.0_3",
+   "n": 769,
+   "nees_ori_mean": 4.0287688940252275,
+   "nees_ori_median": 2.59591868,
+   "nees_rp_mean": 4.865168122509884,
+   "yaw_rate_mean": 0.48158497240220827,
+   "speed_mean": 0.12447818864504855,
+   "n_slam_mean": 35.07152145643693,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.7750325097529259,
+   "frac_n_slam_lt_10": 0.14434330299089726
+  },
+  {
+   "flight": "d2_lam0.01_1",
+   "n": 827,
+   "nees_ori_mean": 4.16836646493873,
+   "nees_ori_median": 2.82982439,
+   "nees_rp_mean": 4.974287170503183,
+   "yaw_rate_mean": 0.4191452882030135,
+   "speed_mean": 0.17481158019624754,
+   "n_slam_mean": 33.97581620314389,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.6553808948004837,
+   "frac_n_slam_lt_10": 0.17896009673518742
+  },
+  {
+   "flight": "d2_lam0.01_2",
+   "n": 853,
+   "nees_ori_mean": 4.24048349716238,
+   "nees_ori_median": 2.45526617,
+   "nees_rp_mean": 9.951015213811312,
+   "yaw_rate_mean": 0.37938088853061763,
+   "speed_mean": 0.20585825004375072,
+   "n_slam_mean": 39.928487690504106,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.5896834701055099,
+   "frac_n_slam_lt_10": 0.07620164126611957
+  },
+  {
+   "flight": "d2_lam0.01_3",
+   "n": 855,
+   "nees_ori_mean": 4.5490377941558835,
+   "nees_ori_median": 2.72540383,
+   "nees_rp_mean": 5.728789361791556,
+   "yaw_rate_mean": 0.37656248634063244,
+   "speed_mean": 0.19684531448115933,
+   "n_slam_mean": 37.58011695906433,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.591812865497076,
+   "frac_n_slam_lt_10": 0.12280701754385964
+  },
+  {
+   "flight": "d2_lam0.1_1",
+   "n": 788,
+   "nees_ori_mean": 3.1695384667263706,
+   "nees_ori_median": 2.316725655,
+   "nees_rp_mean": 7.953705643033059,
+   "yaw_rate_mean": 0.42220143085285583,
+   "speed_mean": 0.1330227038616774,
+   "n_slam_mean": 27.315989847715738,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.6865482233502538,
+   "frac_n_slam_lt_10": 0.282994923857868
+  },
+  {
+   "flight": "d2_lam0.1_2",
+   "n": 835,
+   "nees_ori_mean": 3.8504397880092216,
+   "nees_ori_median": 2.76700792,
+   "nees_rp_mean": 9.362571097797485,
+   "yaw_rate_mean": 0.37886442419673194,
+   "speed_mean": 0.18111844352650988,
+   "n_slam_mean": 32.221556886227546,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.5916167664670658,
+   "frac_n_slam_lt_10": 0.23353293413173654
+  },
+  {
+   "flight": "d2_lam0.1_3",
+   "n": 350,
+   "nees_ori_mean": 34.892871777764285,
+   "nees_ori_median": 1.772654535,
+   "nees_rp_mean": 28.32767730662395,
+   "yaw_rate_mean": 0.37872795093616707,
+   "speed_mean": 0.2042590710369411,
+   "n_slam_mean": 29.67142857142857,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.5828571428571429,
+   "frac_n_slam_lt_10": 0.23714285714285716
+  },
+  {
+   "flight": "d2_lam1.0_1",
+   "n": 2249,
+   "nees_ori_mean": 33.04058793749227,
+   "nees_ori_median": 36.6225108,
+   "nees_rp_mean": 65.24851119436478,
+   "yaw_rate_mean": 0.05446527643035957,
+   "speed_mean": 0.05420350558722237,
+   "n_slam_mean": 47.40818141396176,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.08626056024899956,
+   "frac_n_slam_lt_10": 0.024899955535793685
+  },
+  {
+   "flight": "d2_lam1.0_2",
+   "n": 547,
+   "nees_ori_mean": 3.9949115967617916,
+   "nees_ori_median": 3.26412705,
+   "nees_rp_mean": 9.595767468594168,
+   "yaw_rate_mean": 0.20496134129637,
+   "speed_mean": 0.3272582657621724,
+   "n_slam_mean": 38.58135283363803,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.3235831809872029,
+   "frac_n_slam_lt_10": 0.10054844606946983
+  },
+  {
+   "flight": "d2_lam1.0_3",
+   "n": 1105,
+   "nees_ori_mean": 16.786345632372225,
+   "nees_ori_median": 3.72984496,
+   "nees_rp_mean": 35.459337927530186,
+   "yaw_rate_mean": 0.2337392424459749,
+   "speed_mean": 0.35691500561966955,
+   "n_slam_mean": 40.813574660633485,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.36742081447963804,
+   "frac_n_slam_lt_10": 0.04343891402714932
+  },
+  {
+   "flight": "d2_lam10.0_1",
+   "n": 1156,
+   "nees_ori_mean": 13.661726060662888,
+   "nees_ori_median": 7.04543282,
+   "nees_rp_mean": 31.7300292167494,
+   "yaw_rate_mean": 0.15059106257749078,
+   "speed_mean": 0.4141468326907031,
+   "n_slam_mean": 42.26989619377163,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.22837370242214533,
+   "frac_n_slam_lt_10": 0.03460207612456748
+  },
+  {
+   "flight": "d2_lam10.0_2",
+   "n": 1892,
+   "nees_ori_mean": 17.89908163845856,
+   "nees_ori_median": 10.65586755,
+   "nees_rp_mean": 24.830314890711286,
+   "yaw_rate_mean": 0.07049843889518785,
+   "speed_mean": 0.11697442905186796,
+   "n_slam_mean": 43.300211416490484,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.10570824524312897,
+   "frac_n_slam_lt_10": 0.010570824524312896
+  },
+  {
+   "flight": "d2_lam10.0_3",
+   "n": 2199,
+   "nees_ori_mean": 20.874535609172586,
+   "nees_ori_median": 17.1975847,
+   "nees_rp_mean": 27.231140650573984,
+   "yaw_rate_mean": 0.038883233870585815,
+   "speed_mean": 0.06254685186496278,
+   "n_slam_mean": 48.06139154160982,
+   "n_msckf_mean": null,
+   "n_slam_upd_mean": null,
+   "frac_yaw_rate_gt_0.3": 0.05911778080945884,
+   "frac_n_slam_lt_10": 0.01682582992269213
+  }
+ ],
+ "pooled_bins": {
+  "yaw_rate": [
+   {
+    "bin": [
+     0,
+     0.05
+    ],
+    "n": 8565,
+    "nees_mean": 21.96029264047053,
+    "nees_median": 14.6151152
+   },
+   {
+    "bin": [
+     0.05,
+     0.15
+    ],
+    "n": 703,
+    "nees_mean": 4.805175527354623,
+    "nees_median": 2.64280401
+   },
+   {
+    "bin": [
+     0.15,
+     0.3
+    ],
+    "n": 766,
+    "nees_mean": 4.45034095397842,
+    "nees_median": 2.535115095
+   },
+   {
+    "bin": [
+     0.3,
+     0.6
+    ],
+    "n": 3427,
+    "nees_mean": 3.8689539817420777,
+    "nees_median": 2.52233189
+   },
+   {
+    "bin": [
+     0.6,
+     3
+    ],
+    "n": 2503,
+    "nees_mean": 8.45992367891705,
+    "nees_median": 2.61562335
+   }
+  ],
+  "speed": [
+   {
+    "bin": [
+     0,
+     0.1
+    ],
+    "n": 9143,
+    "nees_mean": 18.104998351428158,
+    "nees_median": 9.03414977
+   },
+   {
+    "bin": [
+     0.1,
+     0.3
+    ],
+    "n": 2750,
+    "nees_mean": 4.631324511788392,
+    "nees_median": 2.82293603
+   },
+   {
+    "bin": [
+     0.3,
+     0.5
+    ],
+    "n": 2643,
+    "nees_mean": 9.312804910269275,
+    "nees_median": 3.88836091
+   },
+   {
+    "bin": [
+     0.5,
+     2
+    ],
+    "n": 1428,
+    "nees_mean": 18.506382761554555,
+    "nees_median": 3.906412005
+   }
+  ],
+  "n_slam": [
+   {
+    "bin": [
+     0,
+     5
+    ],
+    "n": 1002,
+    "nees_mean": 15.221658934924875,
+    "nees_median": 2.628908085
+   },
+   {
+    "bin": [
+     5,
+     10
+    ],
+    "n": 326,
+    "nees_mean": 3.8987172424371166,
+    "nees_median": 2.2623261250000004
+   },
+   {
+    "bin": [
+     10,
+     20
+    ],
+    "n": 467,
+    "nees_mean": 3.553448332401713,
+    "nees_median": 2.10327616
+   },
+   {
+    "bin": [
+     20,
+     35
+    ],
+    "n": 1395,
+    "nees_mean": 3.648127241778194,
+    "nees_median": 2.37909831
+   },
+   {
+    "bin": [
+     35,
+     51
+    ],
+    "n": 12774,
+    "nees_mean": 16.129584965439637,
+    "nees_median": 6.874498765
+   }
+  ],
+  "n_msckf": [],
+  "n_slam_upd": []
+ }
+}

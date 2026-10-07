@@ -1,0 +1,41 @@
+# day 3 step 5: new candidate set (8 yaws, path-integrated 0.5 m), validation, 180 s; round-robin
+d3_frontier_1 frontier validation
+d3_lam0.0_1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.001_1 pose_cov validation LAMBDA=0.001 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.003_1 pose_cov validation LAMBDA=0.003 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.01_1 pose_cov validation LAMBDA=0.01 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.03_1 pose_cov validation LAMBDA=0.03 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.1_1 pose_cov validation LAMBDA=0.1 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam1.0_1 pose_cov validation LAMBDA=1.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_frontier_2 frontier validation
+d3_lam0.0_2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.001_2 pose_cov validation LAMBDA=0.001 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.003_2 pose_cov validation LAMBDA=0.003 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.01_2 pose_cov validation LAMBDA=0.01 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.03_2 pose_cov validation LAMBDA=0.03 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.1_2 pose_cov validation LAMBDA=0.1 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam1.0_2 pose_cov validation LAMBDA=1.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_frontier_3 frontier validation
+d3_lam0.0_3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.001_3 pose_cov validation LAMBDA=0.001 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.003_3 pose_cov validation LAMBDA=0.003 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.01_3 pose_cov validation LAMBDA=0.01 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.03_3 pose_cov validation LAMBDA=0.03 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.1_3 pose_cov validation LAMBDA=0.1 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam1.0_3 pose_cov validation LAMBDA=1.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_frontier_4 frontier validation
+d3_lam0.0_4 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.001_4 pose_cov validation LAMBDA=0.001 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.003_4 pose_cov validation LAMBDA=0.003 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.01_4 pose_cov validation LAMBDA=0.01 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.03_4 pose_cov validation LAMBDA=0.03 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.1_4 pose_cov validation LAMBDA=0.1 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam1.0_4 pose_cov validation LAMBDA=1.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_frontier_5 frontier validation
+d3_lam0.0_5 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.001_5 pose_cov validation LAMBDA=0.001 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.003_5 pose_cov validation LAMBDA=0.003 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.01_5 pose_cov validation LAMBDA=0.01 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.03_5 pose_cov validation LAMBDA=0.03 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam0.1_5 pose_cov validation LAMBDA=0.1 YAW_SAMPLES=8 PATH_SPACING=0.5
+d3_lam1.0_5 pose_cov validation LAMBDA=1.0 YAW_SAMPLES=8 PATH_SPACING=0.5

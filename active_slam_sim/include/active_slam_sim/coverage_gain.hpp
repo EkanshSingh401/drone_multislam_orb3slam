@@ -83,4 +83,25 @@ inline double unknown_volume_in_view(const CoarseMap& map, const Eigen::Matrix3d
   return vol;
 }
 
+// Occlusion along a segment (day 3 step 1): march from `from` to `to` in steps of
+// step_frac * resolution and report OCCUPIED cells strictly between them. UNKNOWN cells
+// never occlude (they are counted in *n_unknown for diagnosis only). The last
+// `end_margin` metres before `to` are skipped: a landmark lies on the surface of its own
+// occupied cell, which must not hide it.
+inline bool segment_occluded(const CoarseMap& map, const Eigen::Vector3d& from, const Eigen::Vector3d& to,
+                             int* n_unknown = nullptr, double end_margin = -1.0, double step_frac = 0.5) {
+  const double L = (to - from).norm();
+  const double step = step_frac * map.res();
+  if (end_margin < 0) end_margin = 1.5 * map.res();
+  int unk = 0;
+  bool occ = false;
+  for (double s = 0.5 * step; s < L - end_margin; s += step) {
+    const int st = map.state(from + (to - from) * (s / L));
+    if (st == 1) { occ = true; break; }
+    if (st == -1) ++unk;
+  }
+  if (n_unknown) *n_unknown = unk;
+  return occ;
+}
+
 }  // namespace active_slam_sim

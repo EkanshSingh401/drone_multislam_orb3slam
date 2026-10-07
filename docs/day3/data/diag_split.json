@@ -1,0 +1,62 @@
+{
+ "flights": {
+  "d3_diag_pc0.01": {
+   "decisions": 70,
+   "changed_by_a": 0.8285714285714286,
+   "chosen_rank_without_a_median": 12.0,
+   "chosen_rank_without_a_mean": 15.785714285714286,
+   "spread_a_median": 0.5743649542616629,
+   "spread_b_median": 4.217548501368151,
+   "rho_b_vs_cost_median": -0.9618227703552559,
+   "chosen_a_median": 2.2402420000000003,
+   "chosen_b_median": -0.358972,
+   "chosen_a_real_median": 2.1582185000000003,
+   "frac_chosen_a_lt_0.01": 0.0,
+   "chosen_is_cheapest": 0.17142857142857143
+  },
+  "d3_diag_pc1.0": {
+   "decisions": 44,
+   "changed_by_a": 0.1590909090909091,
+   "chosen_rank_without_a_median": 0.0,
+   "chosen_rank_without_a_mean": 0.2727272727272727,
+   "spread_a_median": 0.6037362179247475,
+   "spread_b_median": 3.2646339220859373,
+   "rho_b_vs_cost_median": -0.9742050698982656,
+   "chosen_a_median": 0.3170315,
+   "chosen_b_median": -0.369305,
+   "chosen_a_real_median": 0.02751,
+   "frac_chosen_a_lt_0.01": 0.045454545454545456,
+   "chosen_is_cheapest": 0.22727272727272727
+  },
+  "d3_diag_path0.01": {
+   "decisions": 56,
+   "changed_by_a": 0.9107142857142857,
+   "chosen_rank_without_a_median": 29.0,
+   "chosen_rank_without_a_mean": 94.64285714285714,
+   "spread_a_median": 3.899767266375056,
+   "spread_b_median": 3.452866594598265,
+   "rho_b_vs_cost_median": -0.9479960088867021,
+   "chosen_a_median": 4.5835105,
+   "chosen_b_median": -0.8534740000000001,
+   "chosen_a_real_median": 4.526762,
+   "frac_chosen_a_lt_0.01": 0.0,
+   "chosen_is_cheapest": 0.0
+  }
+ },
+ "groups": {
+  "d3_diag": {
+   "decisions": 170,
+   "changed_by_a": 0.6823529411764706,
+   "chosen_rank_without_a_median": 7.0,
+   "chosen_rank_without_a_mean": 37.747058823529414,
+   "spread_a_median": 0.7682560787380985,
+   "spread_b_median": 3.634516755064796,
+   "rho_b_vs_cost_median": -0.9579396342254343,
+   "chosen_a_median": 2.5132885,
+   "chosen_b_median": -0.5370625,
+   "chosen_a_real_median": 2.437707,
+   "frac_chosen_a_lt_0.01": 0.011764705882352941,
+   "chosen_is_cheapest": 0.12941176470588237
+  }
+ }
+}

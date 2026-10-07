@@ -3153,3 +3153,41 @@ margin_time × cruise_speed to r_path and r_safe (planner). 5 IG flights (σ_l =
 min GT clearance 1.07 [0.96–1.25] m, 0 contacts (before: 0.70 [0.00–0.74], 1 contact);
 coverage @180 s 1880 [1760–2000] m³; ATE 0.032 [0.025–0.053] m; 1 post-landing watchdog
 disarm (ground). Results `docs/day2/d2_step5_results.jsonl`.
+
+## 71. Day 3 steps 1–4: visibility diagnosis, pose-term split, new candidate set, NEES vs motion
+
+Diagnostic flights (not evaluations): `d3_diag_pc0.01`, `d3_diag_pc1.0` (old candidate set),
+`d3_diag_path0.01` (8 yaws, 0.5 m path integration). Analyses in `docker/tools/closed_loop/day3/`,
+outputs `docs/day3/data/`.
+
+**Step 1 — real-landmark visibility.** The deployed predictor has NO occlusion test
+(`occluded = nullptr`), so unknown voxels cannot occlude (new `segment_occluded` treats unknown as
+free; tested). Landmarks are not scarce: n_lm median 41 / 32 / 50 per decision (the day-2 "0–3"
+probe sampled only the end of a flight; wrong). Old candidate set: 14–17% of candidates see ≥ 1
+real landmark; of all (landmark, camera, candidate) pairs 92% fail FOV, 0% range, 0.7–0.9% are
+behind an occupied coarse cell. Cause: candidates face frontier centroids (unknown space); the
+in-state SLAM features are where the camera has just been looking. Predictor vs GT geometry
+(6 decisions × 3 flights; re-implementation reproduces the logged counts in 390/408, 542/545,
+2808/2873 candidates): recall 1.00, precision 0.89–0.93 without occlusion; with the occupied-cell
+test the per-candidate visible counts match GT within −11…+5%; landmarks lie on GT surfaces
+(median 1–3 mm). Visibility prediction is correct; the low count is geometry of the candidate set.
+With 8 yaws + path integration: 38% of candidates see ≥ 1 landmark, chosen 98%.
+
+**Step 2 — pose term split** dI_pose = (a) measurement gain + (b) propagation (travel) term.
+b tracks travel cost (within-decision Spearman with path+turn cost −0.95…−0.97). Removing (a)
+changes the chosen candidate in 83% of decisions at λ = 0.01 and 16% at λ = 1 (old set); 91% with
+the new set (λ = 0.01). Within-decision spread: old set a 0.6 vs b 3.3–4.2 nats; new set a 3.9 vs
+b 3.5. So the pose term is not only a distance penalty, but with the old set b dominates its spread.
+
+**Step 3 — candidate set** (`yaw_samples`, `path_spacing`; defaults = old). Math and tests:
+`docs/day3/MATH_day3.md`; 12/12 brute-force checks in the image build. Decision time 0.5 s median
+(≤ 1 s) with ~480 candidates, 8 threads.
+
+**Step 4 — NEES vs motion** (15 day-2 λ flights, full-covariance orientation NEES per sample).
+Across flights NEES correlates with yaw rate (Spearman −0.71 median NEES, p 0.003), not speed
+(−0.28, p 0.31); n_slam correlates positively (+0.77) but because features persist when still.
+By executor phase: during EXPLORE, median NEES is 1.8–3.6 (λ ≤ 0.1) and 2.2–4.3 (λ ≥ 1) — no jump.
+The jump is the HOME phase: 3 of 6 λ ≥ 1 flights hovered 314–460 s held by the executor's ESDF
+guard (home-phase guard has no timeout), NEES median 23–43 growing with hover duration; 2 more
+flew long straight home legs with yaw rate ≈ 0.03 rad/s (NEES 15–24). Low rotational excitation
+explains it (cf. §58 slow segments). Estimator unchanged.

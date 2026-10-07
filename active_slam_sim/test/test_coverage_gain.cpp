@@ -27,6 +27,21 @@ int main() {
   const double vf = unknown_volume_in_view(freem, R, p, f);
   std::printf("all known free: %.4f m3\n", vf);
   CHECK(vf < 1e-9, "known-free space counted as new: %.4f", vf);
+  // segment_occluded (day 3): occupied cells occlude, UNKNOWN cells do not, the target's own cell does not
+  {
+    CoarseMap m(0.25);
+    const Eigen::Vector3d a(0.1, 0.1, 0.1), b(4.1, 0.1, 0.1);
+    int nu = 0;
+    CHECK(!segment_occluded(m, a, b, &nu) && nu > 10, "all-unknown segment counted as occluded (nu=%d)", nu);
+    for (double x = 0; x < 4.5; x += 0.25) m.set(x + 0.1, 0.1, 0.1, false);
+    m.set(b.x(), b.y(), b.z(), true);  // landmark on its own occupied cell
+    CHECK(!segment_occluded(m, a, b, &nu) && nu == 0, "landmark hidden by its own cell");
+    m.set(2.1, 0.1, 0.1, true);
+    CHECK(segment_occluded(m, a, b), "occupied cell in between not detected");
+    CoarseMap u(0.25);  // occupied wall behind a stretch of unknown: still occluded
+    u.set(3.0, 0.1, 0.1, true);
+    CHECK(segment_occluded(u, a, b), "occupied cell beyond unknown not detected");
+  }
   std::printf("%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;
 }

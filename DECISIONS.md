@@ -96,3 +96,24 @@ Decisions made without the user, each with what / why / alternatives.
 - **Step 4 runs on the image built for step 3** (before step 5's ESDF-band and speed-margin
   changes), so it stays comparable to the Stage 2 frontier / IG references. Step 5's changes are
   committed with this step's code but only deployed (rebuild) for the step 5 flights.
+
+## Day 3 (2026-10-07 evening)
+- **Stale shell**: none found — no flight/sim/chain process on host or in the container; the previous
+  session's background shell ended with it. Nothing stopped.
+- **Step 1 diagnosed with new flights, not old bags**: old decisions lack candidate yaw and the
+  coarse map is not recorded. Added per-candidate logging (yaw, visibility classes, occlusion vs
+  occupied coarse cells, rays through unknown) with default (old) scoring; 3 diagnostic flights,
+  excluded from all evaluations. The predictor itself was NOT changed (no occlusion added): GT
+  shows it is right; the gap is the candidate set.
+- **Step 2 split logged in both modes**; old mode keeps its R_delta = I approximation unchanged
+  (old behavior); the new path mode maps waypoint errors with the propagated attitude (correct).
+- **Step 3: new set implemented for pose_cov only**; `ig` (virtual-landmark log-det) and
+  `frontier` keep the old set. 8 yaw samples (45°, half the 87° HFOV). Coverage gain stays at the
+  endpoint (not path-integrated; not asked). Synthetic propagation tabulated (state is static under
+  the synthetic IMU, so exact up to the 0.02 s grid).
+- **Step 4 used only the 15 day-2 λ flights + GT; features = SLAM landmarks in the joint
+  covariance** (tracked/MSCKF counts were not recorded). Step-5 flights now also record
+  /ov_msckf/points_msckf and points_slam so step 4 can be replicated with used-feature counts.
+- **Executor home-phase ESDF-guard stall NOT fixed before step 5** (keeps comparability with day 2
+  and the protocol); step 5 additionally reports explore-phase-only NEES, defined before running.
+- **Step 5 frontier baseline re-flown** (5 flights) on the current image rather than reusing day-1.

@@ -1,0 +1,58 @@
+{
+ "flights": {
+  "d3_diag_pc0.01": {
+   "decisions": 70,
+   "candidates": 5286,
+   "n_lm_median": 41.0,
+   "n_lm_frac_zero": 0.014285714285714285,
+   "n_lm_frac_lt5": 0.014285714285714285,
+   "n_lm_quartiles": [
+    36.0,
+    41.0,
+    45.0
+   ],
+   "frac_cand_ge1_visible_median_per_decision": 0.1579220779220779,
+   "frac_cand_ge1_visible_pooled": 0.16893681422625803,
+   "frac_cand_ge1_visible_after_occ_pooled": 0.16685584562996594,
+   "frac_cand_ge1_visible_when_n_lm_gt0_pooled": 0.17123681687440076,
+   "frac_landmarks_seen_by_best_candidate_median": 0.8444444444444444,
+   "pairs": {
+    "total": 417716,
+    "visible": 0.07407185743423762,
+    "fov": 0.9186289249154929,
+    "range": 0.0,
+    "occluded_occupied": 0.0072992176502695615
+   },
+   "visible_pairs_crossing_unknown": 0.5711679905854663,
+   "chosen_frac_ge1_visible": 0.7857142857142857,
+   "chosen_dI_meas_real_median": 2.1582185000000003
+  }
+ },
+ "pooled": {
+  "decisions": 70,
+  "candidates": 5286,
+  "n_lm_median": 41.0,
+  "n_lm_frac_zero": 0.014285714285714285,
+  "n_lm_frac_lt5": 0.014285714285714285,
+  "n_lm_quartiles": [
+   36.0,
+   41.0,
+   45.0
+  ],
+  "frac_cand_ge1_visible_median_per_decision": 0.1579220779220779,
+  "frac_cand_ge1_visible_pooled": 0.16893681422625803,
+  "frac_cand_ge1_visible_after_occ_pooled": 0.16685584562996594,
+  "frac_cand_ge1_visible_when_n_lm_gt0_pooled": 0.17123681687440076,
+  "frac_landmarks_seen_by_best_candidate_median": 0.8444444444444444,
+  "pairs": {
+   "total": 417716,
+   "visible": 0.07407185743423762,
+   "fov": 0.9186289249154929,
+   "range": 0.0,
+   "occluded_occupied": 0.0072992176502695615
+  },
+  "visible_pairs_crossing_unknown": 0.5711679905854663,
+  "chosen_frac_ge1_visible": 0.7857142857142857,
+  "chosen_dI_meas_real_median": 2.1582185000000003
+ }
+}

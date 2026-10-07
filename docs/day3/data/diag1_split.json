@@ -1,0 +1,34 @@
+{
+ "flights": {
+  "d3_diag_pc0.01": {
+   "decisions": 70,
+   "changed_by_a": 0.8285714285714286,
+   "chosen_rank_without_a_median": 12.0,
+   "chosen_rank_without_a_mean": 15.785714285714286,
+   "spread_a_median": 0.5743649542616629,
+   "spread_b_median": 4.217548501368151,
+   "rho_b_vs_cost_median": -0.9618227703552559,
+   "chosen_a_median": 2.2402420000000003,
+   "chosen_b_median": -0.358972,
+   "chosen_a_real_median": 2.1582185000000003,
+   "frac_chosen_a_lt_0.01": 0.0,
+   "chosen_is_cheapest": 0.17142857142857143
+  }
+ },
+ "groups": {
+  "d3_diag": {
+   "decisions": 70,
+   "changed_by_a": 0.8285714285714286,
+   "chosen_rank_without_a_median": 12.0,
+   "chosen_rank_without_a_mean": 15.785714285714286,
+   "spread_a_median": 0.5743649542616629,
+   "spread_b_median": 4.217548501368151,
+   "rho_b_vs_cost_median": -0.9618227703552559,
+   "chosen_a_median": 2.2402420000000003,
+   "chosen_b_median": -0.358972,
+   "chosen_a_real_median": 2.1582185000000003,
+   "frac_chosen_a_lt_0.01": 0.0,
+   "chosen_is_cheapest": 0.17142857142857143
+  }
+ }
+}

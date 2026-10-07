@@ -19,6 +19,9 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 #include <Eigen/Dense>
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -29,6 +32,7 @@
 #include <std_msgs/msg/string.hpp>
 
 #include "active_slam_information/information_gain.hpp"
+#include "active_slam_sim/candidate_scoring.hpp"
 #include "active_slam_sim/coverage_gain.hpp"
 #include "active_slam_information/ros/joint_cov_problem.hpp"
 #include "active_slam_information/view_geometry.hpp"
@@ -58,6 +62,13 @@ struct Candidate {
   double score = NAN, delta = NAN, cost = 0, delta_real = NAN, delta_virt = NAN;
   int n_meas_real = 0, n_meas_virt = 0;
   double dI_pose = NAN, coverage_gain = NAN, score_pc = NAN;  // pose_cov mode terms (day 2)
+  // day 3: dI_pose = dI_meas (a, measurement gain) + dI_prop (b, propagation/travel term);
+  // dI_meas_real: (a) from real SLAM landmarks alone. vis: (landmark, camera) pairs at the
+  // endpoint by class [visible, fov, range, occluded-by-occupied]; unk_vis: visible pairs
+  // whose ray crosses unknown space (unknown does not occlude); lm_vis: landmarks with >= 1
+  // visible pair (no occlusion test, as scored).
+  double dI_meas = NAN, dI_prop = NAN, dI_meas_real = NAN;
+  int vis[4] = {0, 0, 0, 0}, unk_vis = 0, lm_vis = 0, lm_vis_occ = 0, n_wp = 0;
   std::pair<int, int> tile{0, 0};
 };
 
@@ -87,7 +98,14 @@ class ExplorationPlanner : public rclcpp::Node {
     max_virtual_ = declare_parameter("max_virtual_per_cluster", 8);
     done_after_ = declare_parameter("done_after_empty_replans", 6);
     grace_ = declare_parameter("grace_s", 10.0);
-    max_attempts_ = declare_parameter("max_tile_attempts", 2);  // airborne this long before "done" may be declared
+    max_attempts_ = declare_parameter("max_tile_attempts", 2);
+    // Day 3 candidate set. yaw_samples 1 = old (one yaw, facing the frontier centroid);
+    // N > 1 = N yaws per position, facing + k 2pi/N. path_spacing 0 = old (endpoint only);
+    // > 0 = pose_cov gain integrated over waypoints this far apart along the executor's path.
+    yaw_samples_ = declare_parameter("yaw_samples", 1);
+    path_spacing_ = declare_parameter("path_spacing", 0.0);
+    yaw_rate_ = declare_parameter("yaw_rate", 0.6);  // the executor's yaw rate limit
+    threads_ = declare_parameter("score_threads", 8);  // airborne this long before "done" may be declared
     const auto esdf_topic = declare_parameter("esdf_topic", std::string("/nvblox_node/static_esdf_pointcloud"));
     sub_odom_ = create_subscription<nav_msgs::msg::Odometry>(
         declare_parameter("odom_topic", std::string("/ov_msckf/odomimu")), 10,
@@ -118,8 +136,8 @@ class ExplorationPlanner : public rclcpp::Node {
     nm.sigma_wb = 2.0e-6; nm.sigma_wb_2 = nm.sigma_wb * nm.sigma_wb;
     nm.sigma_ab = 3.0e-4; nm.sigma_ab_2 = nm.sigma_ab * nm.sigma_ab;
     prop_ = std::make_unique<PropagatorAccess>(nm, 9.81);
-    RCLCPP_INFO(get_logger(), "exploration_planner up: type=%s height=%.2f standoff=%.2f r_safe=%.2f sigma_virtual=%.6g p_used=%.3f",
-                type_.c_str(), height_, standoff_, r_safe_, sigma_l_, p_used_);
+    RCLCPP_INFO(get_logger(), "exploration_planner up: type=%s height=%.2f standoff=%.2f r_safe=%.2f sigma_virtual=%.6g p_used=%.3f lambda=%.6g yaw_samples=%d path_spacing=%.2f",
+                type_.c_str(), height_, standoff_, r_safe_, sigma_l_, p_used_, lambda_, yaw_samples_, path_spacing_);
   }
 
  private:
@@ -186,12 +204,17 @@ class ExplorationPlanner : public rclcpp::Node {
         }
       }
       if (!ok) continue;
-      cd.yaw = std::atan2(c2.y() - cd.xy.y(), c2.x() - cd.xy.x());
+      const double facing = std::atan2(c2.y() - cd.xy.y(), c2.x() - cd.xy.x());
       cd.path_len = (cd.xy - drone).norm();
-      const double dyaw = std::fabs(std::remainder(cd.yaw - drone_yaw_, 2 * M_PI));
-      if (cd.path_len < 0.3 && dyaw < 20.0 * M_PI / 180.0) continue;  // already looking there
-      cd.cost = cd.path_len + 0.5 * dyaw;  // m; 0.5 m per rad of turning
-      out.push_back(cd);
+      const int ny = std::max(1, yaw_samples_);
+      for (int k = 0; k < ny; ++k) {
+        Candidate cy = cd;
+        cy.yaw = std::remainder(facing + 2.0 * M_PI * k / ny, 2 * M_PI);
+        const double dyaw = std::fabs(std::remainder(cy.yaw - drone_yaw_, 2 * M_PI));
+        if (cy.path_len < 0.3 && dyaw < 20.0 * M_PI / 180.0) continue;  // already looking there
+        cy.cost = cy.path_len + 0.5 * dyaw;  // m; 0.5 m per rad of turning
+        out.push_back(cy);
+      }
     }
     return out;
   }
@@ -228,6 +251,7 @@ class ExplorationPlanner : public rclcpp::Node {
         MatrixXd cols = S.middleCols(ic, d) * F.transpose(); S.middleCols(ic, d) = cols;
         S.block(ic, ic, d, d) += Qd;
       }
+      const double ld_prop = active_slam_sim::logdet_spd(S.block(ic, ic, 6, 6));  // pose prior at the candidate, no measurements
       // clone at the candidate
       const int n = (int)S.rows();
       MatrixXd S2 = MatrixXd::Zero(n + 6, n + 6);
@@ -293,9 +317,16 @@ class ExplorationPlanner : public rclcpp::Node {
         if (pprior.ok()) {
           const auto gp = asi::evaluate(pprior, meas);
           Eigen::LLT<MatrixXd> l0(P.Sigma.block(ic, ic, 6, 6));
-          if (gp.ok && l0.info() == Eigen::Success)
-            cd.dI_pose = 2.0 * l0.matrixL().toDenseMatrix().diagonal().array().log().sum() - gp.posterior_logdet;
+          if (gp.ok && l0.info() == Eigen::Success) {
+            const double ld_now = 2.0 * l0.matrixL().toDenseMatrix().diagonal().array().log().sum();
+            cd.dI_pose = ld_now - gp.posterior_logdet;
+            cd.dI_prop = ld_now - ld_prop;               // (b) day 3
+            cd.dI_meas = ld_prop - gp.posterior_logdet;  // (a)
+            const auto gpr = asi::evaluate(pprior, m_real);
+            if (gpr.ok) cd.dI_meas_real = ld_prop - gpr.posterior_logdet;
+          }
         }
+        vis_diag(cd, P, cp);
         const auto& cam = P.cameras.front();
         const Eigen::Matrix3d R_GC = R_ItoG * cam.R_ItoC.transpose();
         const Vector3d p_GC = cp.p_IinG + R_ItoG * (-cam.R_ItoC.transpose() * cam.p_IinC);
@@ -303,6 +334,149 @@ class ExplorationPlanner : public rclcpp::Node {
         cd.score_pc = cd.dI_pose + lambda_ * cd.coverage_gain;
       }
     }
+  }
+
+  // Step 1 diagnosis (day 3): classify every (real landmark, camera) pair at the endpoint.
+  void vis_diag(Candidate& cd, const asi::JointCovProblem& P, const asi::Pose& cp) const {
+    for (const auto& lm : P.landmarks) {
+      bool any = false, any_occ = false;
+      for (const auto& cam : P.cameras) {
+        int nu = 0;
+        const auto v = active_slam_sim::classify_visibility(cp, cam, lm.p_FinG, &coarse_, &nu);
+        cd.vis[(int)v]++;
+        if (v == active_slam_sim::Vis::VISIBLE && nu > 0) cd.unk_vis++;
+        if (v == active_slam_sim::Vis::VISIBLE) any = true;
+        if (v == active_slam_sim::Vis::OCCLUDED) any_occ = true;
+      }
+      cd.lm_vis += any || any_occ;  // visible as scored (no occlusion test)
+      cd.lm_vis_occ += any;         // visible after an occupied-cell occlusion test
+    }
+  }
+
+  // Day 3 path-integrated pose_cov score (candidate_scoring.hpp, MATH_TO_CODE.md day 3).
+  void score_path(std::vector<Candidate>& cands) {
+    if (!jc_) return;
+    const auto P = asi::problem_from_msg(*jc_);
+    if (!P.ok) return;
+    const int ic = P.imu_col;
+    bool okn = false;
+    const double ld_now = active_slam_sim::logdet_spd(P.Sigma.block(ic, ic, 6, 6), &okn);
+    if (!okn) return;
+    // One-step OpenVINS propagation (synthetic level, unaccelerated IMU): the state does not
+    // move (v = 0, w = 0, biases 0), so F and Qd are the same every step -- tabulate powers.
+    const double dt = 0.02;
+    Eigen::MatrixXd F1, Q1;
+    {
+      ov_msckf::StateOptions so;
+      so.num_cameras = 2;
+      auto st = std::make_shared<ov_msckf::State>(so);
+      Eigen::Matrix<double, 16, 1> x = Eigen::Matrix<double, 16, 1>::Zero();
+      for (int i = 0; i < 4; i++) x(i) = jc_->imu_pose.q_gtoi[i];
+      for (int i = 0; i < 3; i++) x(4 + i) = jc_->imu_pose.p_iing[i];
+      st->_imu->set_value(x);
+      st->_imu->set_fej(x);
+      ov_core::ImuData a, b;
+      a.wm.setZero(); b.wm.setZero();
+      a.am = P.current.R_GtoI * Vector3d(0, 0, 9.81); b.am = a.am;
+      a.timestamp = 0; b.timestamp = dt;
+      prop_->predict_and_compute(st, a, b, F1, Q1);
+    }
+    double Tmax = 0;
+    std::vector<std::vector<active_slam_sim::Waypoint>> wps(cands.size());
+    for (size_t i = 0; i < cands.size(); ++i) {
+      wps[i] = active_slam_sim::executor_profile(Vector2d(P.current.p_IinG.x(), P.current.p_IinG.y()), drone_yaw_, cands[i].xy, cands[i].yaw,
+                                                 height_, std::max(speed_, 0.05), yaw_rate_, path_spacing_);
+      Tmax = std::max(Tmax, wps[i].back().t);
+    }
+    const int nsteps = (int)std::ceil(Tmax / dt) + 1;
+    std::vector<MatrixXd> Phi(nsteps + 1), Qk(nsteps + 1);
+    Phi[0] = MatrixXd::Identity(15, 15); Qk[0] = MatrixXd::Zero(15, 15);
+    for (int k = 1; k <= nsteps; ++k) { Phi[k] = F1 * Phi[k - 1]; Qk[k] = F1 * Qk[k - 1] * F1.transpose() + Q1; }
+    const active_slam_sim::PropagateFn prop = [&](MatrixXd& S, int c, double t0, double t1) {
+      const int k = std::min(nsteps, (int)std::lround(t1 / dt)) - std::min(nsteps, (int)std::lround(t0 / dt));
+      if (k <= 0) return;
+      MatrixXd rows = Phi[k] * S.middleRows(c, 15); S.middleRows(c, 15) = rows;
+      MatrixXd cols = S.middleCols(c, 15) * Phi[k].transpose(); S.middleCols(c, 15) = cols;
+      S.block(c, c, 15, 15) += Qk[k];
+    };
+    const asi::ConstantNoiseModel noise(sigma_px_ / std::sqrt(p_used_));
+    const int N0 = (int)P.Sigma.rows();
+    const int PLACE = 1 << 28;  // placeholder column for clone k: PLACE + 6k
+    auto one = [&](size_t i) {
+      Candidate& cd = cands[i];
+      const auto& W = wps[i];
+      cd.n_wp = (int)W.size();
+      // virtual frontier landmarks of this cluster (as the endpoint mode)
+      std::vector<asi::LandmarkLinearization> virt;
+      const int step = std::max(1, cd.cluster_size / max_virtual_);
+      for (int k = 0; k < cd.cluster_size && (int)virt.size() < max_virtual_; k += step) {
+        asi::LandmarkLinearization lm;
+        lm.is_virtual = true;
+        lm.p_FinG = cd.frontier_pts[k];
+        virt.push_back(lm);
+      }
+      for (int k = 0; k < (int)virt.size(); ++k) virt[k].rep = {{PLACE / 2 + 3 * k, Eigen::Matrix3d::Identity()}};
+      // geometry pass, original columns; the R_delta map uses the propagated attitude (= now)
+      std::vector<asi::PredictedMeasurement> m_real, m_virt;
+      for (size_t k = 0; k < W.size(); ++k)
+        for (const auto& cam : P.cameras) {
+          asi::PredictedMeasurement pm;
+          for (const auto& lm : P.landmarks)
+            if (asi::predict_measurement(P.current, W[k].pose, PLACE + 6 * (int)k, cam, lm, noise, nullptr, &pm)) m_real.push_back(pm);
+          for (const auto& lm : virt)
+            if (asi::predict_measurement(P.current, W[k].pose, PLACE + 6 * (int)k, cam, lm, noise, nullptr, &pm)) m_virt.push_back(pm);
+        }
+      cd.n_meas_real = (int)m_real.size();
+      cd.n_meas_virt = (int)m_virt.size();
+      // reduce to IMU (15) + the real-landmark columns the measurements touch
+      std::vector<char> mark(N0, 0);
+      for (int c = 0; c < 15; ++c) mark[ic + c] = 1;
+      for (const auto& pm : m_real)
+        for (const auto& b : pm.blocks)
+          if (b.col < N0) for (int c = 0; c < b.J.cols(); ++c) mark[b.col + c] = 1;
+      std::vector<int> idx, map;
+      for (int c = 0; c < N0; ++c) if (mark[c]) idx.push_back(c);
+      MatrixXd Sr = active_slam_sim::marginal(P.Sigma, idx, &map);
+      const int nr = (int)Sr.rows(), nv = (int)virt.size();
+      Sr = asi::augment_with_virtual_landmarks(Sr, nv, sigma_l_);
+      std::vector<double> times;
+      for (const auto& w : W) times.push_back(w.t);
+      const auto PP = active_slam_sim::build_path_prior(Sr, map[ic], times, prop);
+      auto remap = [&](std::vector<asi::PredictedMeasurement>& ms) {
+        for (auto& pm : ms)
+          for (auto& b : pm.blocks) {
+            if (b.col >= PLACE) b.col = PP.clone_cols[(b.col - PLACE) / 6];
+            else if (b.col >= PLACE / 2) b.col = nr + (b.col - PLACE / 2);
+            else b.col = map[b.col];
+          }
+      };
+      remap(m_real); remap(m_virt);
+      const int n = (int)PP.S.rows();
+      MatrixXd Tp = MatrixXd::Zero(6, n);
+      Tp.block(0, PP.clone_cols.back(), 6, 6).setIdentity();
+      const MatrixXd Jr = active_slam_sim::information(m_real, n);
+      const MatrixXd J = Jr + active_slam_sim::information(m_virt, n);
+      const auto g = active_slam_sim::pose_gain_split(ld_now, PP.S, Tp, J);
+      if (g.ok) {
+        cd.dI_pose = g.total(); cd.dI_prop = g.propagation(); cd.dI_meas = g.measurement();
+        const auto gr = active_slam_sim::pose_gain_split(ld_now, PP.S, Tp, Jr);
+        if (gr.ok) cd.dI_meas_real = gr.measurement();
+      }
+      asi::Pose cp = W.back().pose;
+      vis_diag(cd, P, cp);
+      const auto& cam = P.cameras.front();
+      const Eigen::Matrix3d R_ItoG = cp.R_GtoI.transpose();
+      const Eigen::Matrix3d R_GC = R_ItoG * cam.R_ItoC.transpose();
+      const Vector3d p_GC = cp.p_IinG + R_ItoG * (-cam.R_ItoC.transpose() * cam.p_IinC);
+      cd.coverage_gain = active_slam_sim::unknown_volume_in_view(coarse_, R_GC, p_GC, frustum_);
+      if (std::isfinite(cd.dI_pose)) cd.score_pc = cd.dI_pose + lambda_ * cd.coverage_gain;
+    };
+    const int nt = std::max(1, std::min<int>(threads_, (int)cands.size()));
+    std::vector<std::thread> pool;
+    std::atomic<size_t> next{0};
+    for (int t = 0; t < nt; ++t)
+      pool.emplace_back([&] { for (size_t i; (i = next++) < cands.size();) one(i); });
+    for (auto& th : pool) th.join();
   }
 
   void tick() {
@@ -322,9 +496,14 @@ class ExplorationPlanner : public rclcpp::Node {
     const bool timed_out = have_goal_ && now - goal_time_ > goal_timeout_;
     if (have_goal_ && !reached && !timed_out) { publish_goal(); return; }
     auto cands = candidates(drone);
-    if (type_ == "ig" || type_ == "pose_cov") score_ig(cands);
+    const auto t0 = std::chrono::steady_clock::now();
+    if (type_ == "pose_cov" && path_spacing_ > 0) score_path(cands);
+    else if (type_ == "ig" || type_ == "pose_cov") score_ig(cands);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    const int n_lm = jc_ ? (int)jc_->landmarks.size() : -1;
     std::ostringstream js;
-    js << "{\"t\":" << now << ",\"type\":\"" << type_ << "\",\"sigma_virtual\":" << sigma_l_ << ",\"lambda\":" << lambda_ << ",\"drone\":[" << drone.x() << "," << drone.y() << "],\"candidates\":[";
+    js << "{\"t\":" << now << ",\"type\":\"" << type_ << "\",\"sigma_virtual\":" << sigma_l_ << ",\"lambda\":" << lambda_ << ",\"yaw_samples\":" << yaw_samples_ << ",\"path_spacing\":" << path_spacing_
+       << ",\"ms\":" << ms << ",\"n_lm\":" << n_lm << ",\"drone_yaw\":" << drone_yaw_ << ",\"drone\":[" << drone.x() << "," << drone.y() << "],\"candidates\":[";
     int best = -1;
     for (size_t i = 0; i < cands.size(); ++i) {
       const auto& c = cands[i];
@@ -336,7 +515,13 @@ class ExplorationPlanner : public rclcpp::Node {
          << ",\"n_real\":" << c.n_meas_real << ",\"n_virt\":" << c.n_meas_virt
          << ",\"dI_pose\":" << (std::isfinite(c.dI_pose) ? std::to_string(c.dI_pose) : "null")
          << ",\"coverage_gain\":" << (std::isfinite(c.coverage_gain) ? std::to_string(c.coverage_gain) : "null")
-         << ",\"score_pc\":" << (std::isfinite(c.score_pc) ? std::to_string(c.score_pc) : "null") << "}";
+         << ",\"score_pc\":" << (std::isfinite(c.score_pc) ? std::to_string(c.score_pc) : "null")
+         << ",\"yaw\":" << c.yaw << ",\"cost\":" << c.cost
+         << ",\"dI_meas\":" << (std::isfinite(c.dI_meas) ? std::to_string(c.dI_meas) : "null")
+         << ",\"dI_prop\":" << (std::isfinite(c.dI_prop) ? std::to_string(c.dI_prop) : "null")
+         << ",\"dI_meas_real\":" << (std::isfinite(c.dI_meas_real) ? std::to_string(c.dI_meas_real) : "null")
+         << ",\"vis\":[" << c.vis[0] << "," << c.vis[1] << "," << c.vis[2] << "," << c.vis[3] << "],\"unk_vis\":" << c.unk_vis
+         << ",\"lm_vis\":" << c.lm_vis << ",\"lm_vis_occ\":" << c.lm_vis_occ << ",\"n_wp\":" << c.n_wp << "}";
       if (type_ == "frontier") {
         if (best < 0 || c.cost < cands[best].cost) best = (int)i;  // nearest (travel + turning)
       } else if (type_ == "pose_cov") {
@@ -388,7 +573,8 @@ class ExplorationPlanner : public rclcpp::Node {
   std::unique_ptr<PropagatorAccess> prop_;
   bool have_goal_ = false, done_ = false;
   int empty_replans_ = 0, max_attempts_ = 2;
-  double lambda_ = 0.1, margin_time_ = 1.0;
+  double lambda_ = 0.1, margin_time_ = 1.0, path_spacing_ = 0.0, yaw_rate_ = 0.6;
+  int yaw_samples_ = 1, threads_ = 8;
   active_slam_sim::CoarseMap coarse_{0.25};
   active_slam_sim::FrustumParams frustum_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_coarse_;

@@ -459,10 +459,13 @@ RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
     colcon build --packages-select active_slam_sim \
         --cmake-args -DCMAKE_BUILD_TYPE=Release \
         --executor sequential --parallel-workers 1 && \
-    for x in octomap_mapper exploration_planner offboard_executor.py vio_fault_injector.py vio_health_gate.py test_coverage_gain; do \
+    for x in octomap_mapper exploration_planner offboard_executor.py vio_fault_injector.py vio_health_gate.py test_coverage_gain test_candidate_scoring; do \
         test -x ${WS}/install/active_slam_sim/lib/active_slam_sim/$x \
             || { echo "FATAL: active_slam_sim/$x not built"; exit 1; }; \
-    done && echo "active_slam_sim built"
+    done && \
+    ${WS}/install/active_slam_sim/lib/active_slam_sim/test_coverage_gain && \
+    ${WS}/install/active_slam_sim/lib/active_slam_sim/test_candidate_scoring && \
+    echo "active_slam_sim built, tests pass"
 
 # -----------------------------------------------------------------------------
 # 10. Runtime environment
