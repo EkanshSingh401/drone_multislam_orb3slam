@@ -109,8 +109,8 @@ class ExplorationPlanner : public rclcpp::Node {
     nm.sigma_wb = 2.0e-6; nm.sigma_wb_2 = nm.sigma_wb * nm.sigma_wb;
     nm.sigma_ab = 3.0e-4; nm.sigma_ab_2 = nm.sigma_ab * nm.sigma_ab;
     prop_ = std::make_unique<PropagatorAccess>(nm, 9.81);
-    RCLCPP_INFO(get_logger(), "exploration_planner up: type=%s height=%.2f standoff=%.2f r_safe=%.2f", type_.c_str(), height_, standoff_,
-                r_safe_);
+    RCLCPP_INFO(get_logger(), "exploration_planner up: type=%s height=%.2f standoff=%.2f r_safe=%.2f sigma_virtual=%.6g p_used=%.3f",
+                type_.c_str(), height_, standoff_, r_safe_, sigma_l_, p_used_);
   }
 
  private:
@@ -289,7 +289,7 @@ class ExplorationPlanner : public rclcpp::Node {
     auto cands = candidates(drone);
     if (type_ == "ig") score_ig(cands);
     std::ostringstream js;
-    js << "{\"t\":" << now << ",\"type\":\"" << type_ << "\",\"drone\":[" << drone.x() << "," << drone.y() << "],\"candidates\":[";
+    js << "{\"t\":" << now << ",\"type\":\"" << type_ << "\",\"sigma_virtual\":" << sigma_l_ << ",\"drone\":[" << drone.x() << "," << drone.y() << "],\"candidates\":[";
     int best = -1;
     for (size_t i = 0; i < cands.size(); ++i) {
       const auto& c = cands[i];

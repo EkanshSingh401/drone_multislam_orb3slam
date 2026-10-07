@@ -57,3 +57,15 @@ Decisions made without the user, each with what / why / alternatives.
 - **Presets** (light, gain, exposure, read noise, e-/DN): mild (1, 1, 3 ms, 1.5, 4),
   moderate (0.5, 2, 10 ms, 2, 4), severe (0.25, 4, 20 ms, 2.5, 4) — chosen to bracket a real
   D455 IR stream from good indoor light to low light, not fitted to data.
+
+## Day 2, step 1 — sigma_l plumbing
+- **No bug, Stage 3 not rerun.** Evidence: (a) `ros2 param get` on the node returns the passed
+  value; (b) in the Stage 3 decisions the virtual gain per virtual measurement rises
+  1.7 → 5.2 → 7.1 → 9.6 → 12.7 nats for sigma_l 0.01 → 3 m, ~4.6 nats per decade = the
+  2·ln(10) slope of a 2-D measurement's log det above the crossover; (c) new unit test matches
+  log det(I + σ² H R⁻¹ Hᵀ) exactly over σ = 1e-4…10 m. Why the curve looked flat: the gain is
+  logarithmic in σ_l above the crossover σ_l ≈ σ_px·Z/f ≈ 9 mm, and all swept values were ≥ 10 mm.
+  The test's first closed form ignored pose uncertainty (R = s² I); the planner was right, the
+  test reference was wrong — corrected to R = s² I + H_x Σ_x H_xᵀ.
+- **Side finding logged, not acted on:** median real-landmark gain per candidate is 0.00 nats
+  (most candidates predict no visible real SLAM landmark).
