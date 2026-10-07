@@ -75,6 +75,21 @@ world, sets PX4 vision-only, starts OpenVINS live + converter + mapper + planner
 sim-only GT watchdog + executor, records `flight.bag`). Evaluate with
 `cl_eval.py`, `cl_report.py`, `clearance.py`, `gt_window_eval.py`.
 
+**Closed-loop comparison protocol (overnight Stage 2; written before running).**
+Validation scene, stock config, no parameter changes between or after flights.
+Planners: `frontier` (baseline) and `ig` (sigma_virtual = 1.0, p(used) 0.92).
+5 flights each, alternated f,i,f,i,... Each flight: PX4 vision-only (EKF2 EV),
+OpenVINS initialized at rest, VIO health gate, 180 s exploration budget from
+reaching 1.5 m, then retrace home, land (vision hold below 0.4 m), disarm.
+Metrics per flight (`flight_summary.py`): known volume at 0/30/60/90/120/150/180 s
+and final, path length, known volume per metre flown, OpenVINS ATE on the GT
+airborne window (and per metre), full-covariance NEES (ori, rp, pos) on the
+joint-covariance subset, min GT clearance (contact < 0.33 m), sim-only watchdog
+terminations, arm failures, ESDF guard holds, IG real-vs-virtual gain share of the
+chosen candidate (median, IQR). Reported as median and range over the 5 flights;
+no claim from a single flight. Any failure counts; flights are not rerun to replace
+failures.
+
 ---
 
 ## 2. Host and environment

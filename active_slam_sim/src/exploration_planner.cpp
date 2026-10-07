@@ -54,7 +54,8 @@ struct Candidate {
   int cluster_size = 0;
   Vector3d centroid = Vector3d::Zero();
   std::vector<Vector3d> frontier_pts;
-  double score = NAN, delta = NAN, cost = 0;
+  double score = NAN, delta = NAN, cost = 0, delta_real = NAN, delta_virt = NAN;
+  int n_meas_real = 0, n_meas_virt = 0;
   std::pair<int, int> tile{0, 0};
 };
 
@@ -243,21 +244,29 @@ class ExplorationPlanner : public rclcpp::Node {
       cp.R_GtoI = R_ItoG.transpose();
       cp.p_IinG = Vector3d(cd.xy.x(), cd.xy.y(), height_);
       const asi::ConstantNoiseModel noise(sigma_px_ / std::sqrt(p_used_));  // expected info = p(used) x info
-      std::vector<asi::PredictedMeasurement> meas;
-      auto add = [&](const asi::LandmarkLinearization& lm) {
+      std::vector<asi::PredictedMeasurement> meas, m_real, m_virt;
+      auto add = [&](const asi::LandmarkLinearization& lm, std::vector<asi::PredictedMeasurement>& part) {
         for (const auto& cam : P.cameras) {
           asi::PredictedMeasurement pm;
-          if (asi::predict_measurement(cp, cp, clone_col, cam, lm, noise, nullptr, &pm)) meas.push_back(pm);
+          if (asi::predict_measurement(cp, cp, clone_col, cam, lm, noise, nullptr, &pm)) { meas.push_back(pm); part.push_back(pm); }
         }
       };
-      for (const auto& lm : P.landmarks) add(lm);
-      for (const auto& lm : virt) add(lm);
+      for (const auto& lm : P.landmarks) add(lm, m_real);
+      for (const auto& lm : virt) add(lm, m_virt);
       const asi::InformationPrior prior(Sa, Ta);
       if (!prior.ok()) continue;
       const auto gn = asi::evaluate(prior, meas);
       if (!gn.ok) continue;
       cd.score = gn.posterior_logdet;
       cd.delta = gn.delta;
+      // Objective decomposition (overnight Stage 1a): gain from real SLAM-landmark
+      // measurements alone and from virtual frontier landmarks alone, same prior.
+      // Not additive (log-det); share = real / (real + virt).
+      const auto gr = asi::evaluate(prior, m_real), gv = asi::evaluate(prior, m_virt);
+      cd.delta_real = gr.ok ? gr.delta : NAN;
+      cd.delta_virt = gv.ok ? gv.delta : NAN;
+      cd.n_meas_real = (int)m_real.size();
+      cd.n_meas_virt = (int)m_virt.size();
     }
   }
 
@@ -285,7 +294,11 @@ class ExplorationPlanner : public rclcpp::Node {
     for (size_t i = 0; i < cands.size(); ++i) {
       const auto& c = cands[i];
       js << (i ? "," : "") << "{\"xy\":[" << c.xy.x() << "," << c.xy.y() << "],\"size\":" << c.cluster_size << ",\"len\":" << c.path_len
-         << ",\"score\":" << (std::isfinite(c.score) ? std::to_string(c.score) : "null") << "}";
+         << ",\"score\":" << (std::isfinite(c.score) ? std::to_string(c.score) : "null")
+         << ",\"delta\":" << (std::isfinite(c.delta) ? std::to_string(c.delta) : "null")
+         << ",\"delta_real\":" << (std::isfinite(c.delta_real) ? std::to_string(c.delta_real) : "null")
+         << ",\"delta_virt\":" << (std::isfinite(c.delta_virt) ? std::to_string(c.delta_virt) : "null")
+         << ",\"n_real\":" << c.n_meas_real << ",\"n_virt\":" << c.n_meas_virt << "}";
       if (type_ == "frontier") {
         if (best < 0 || c.cost < cands[best].cost) best = (int)i;  // nearest (travel + turning)
       } else if (std::isfinite(c.score) && (best < 0 || c.score < cands[best].score)) {

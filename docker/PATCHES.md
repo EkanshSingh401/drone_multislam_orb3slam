@@ -3033,3 +3033,56 @@ Both planners complete an autonomous vision-only flight in the validation
 scene without collision. Flight logs: `docker/out/cl/{f8,i4}/` (executor JSON
 log, planner decisions per replan, mapper coverage, OpenVINS state, flight bag
 with GT). Not a comparison: one flight each, no tuning; stopping here as asked.
+
+## 65. Overnight Stage 1: diagnostics before comparisons
+
+**1a — IG objective decomposition.** The planner now evaluates, per candidate and
+against the same prior, the gain from real SLAM-landmark measurements alone
+(`delta_real`), from virtual frontier landmarks alone (`delta_virt`) and from both
+(`delta`), logged in `~/decision`. Log-det gains are not additive; reported share =
+real / (real + virt) of the chosen candidate. Numbers per flight come from the Stage 2
+IG flights (§66).
+
+**1b — PX4 land detector.** In SITL it never reported contact while armed: its
+`ground_contact → maybe_landed → landed` chain needs EKF vertical velocity below
+`LNDMC_Z_VEL_MAX` (0.25 m/s) for `LNDMC_TRIG_TIME` (1.0 s) per stage; with EKF2 on
+vision only, that velocity comes from OpenVINS, which starts diverging within ~1 s of
+ground contact (§64), so the detector never confirms; `landed` flips only after
+disarm. (Also: my old OpenVINS threshold of 0.15 m disarmed in the air before
+contact.) Changes: executor disarms on PX4 `landed|maybe_landed` (primary) or
+OpenVINS within 0.12 m of takeoff height with |vz| < 0.15 m/s after 2 s of the land
+phase (backup); below 0.4 m the executor commands the VIO health gate to HOLD, so PX4
+touches down on IMU dead-reckoning instead of a diverging estimate;
+`LNDMC_TRIG_TIME 0.3` in the SITL setup. Test flight: clean landing, disarm by the
+OpenVINS backup at z = 0.01, no watchdog. **Partial:** PX4's own detector still did
+not confirm before the backup fired; disarm is reliable but not PX4-keyed.
+
+**1c — In-air VIO failure.** New `vio_fault_injector.py` (between OpenVINS and the
+PX4 bridge; planner, mapper and the GT watchdog keep the true estimate). 60 s
+frontier flights, fault 15 s after airborne. PX4 params in effect: EKF2_EVP_GATE 5,
+EKF2_EVV_GATE 3, EKF2_EV_NOISE_MD 0 (converter variances: pos 0.01 m², i.e. 0.5 m
+position gate), EKF2_NOAID_TOUT 5 s, COM_FAIL_ACT_T 5 s, NAV_DLL_ACT 2,
+COM_OBL_RC_ACT 0, COM_POS_FS_EPH 5, COM_VEL_FS_EVH 1.
+
+| fault | PX4 without gate | with VIO health gate |
+|---|---|---|
+| dropout 5 s | stops EV fusion, dead-reckons; local position invalid at +7 s → failsafe descent (1.5 → 0.4 m), resumes when vision returns — fails safe | same |
+| drift 0.5 m/s, 6 s | **follows**: EV fusion stays active, vehicle physically displaced up to 2.8 m from its belief, no failsafe | not detected (self-consistent drift) |
+| jump 2 m | **follows**: EKF resets to the only aiding source within ~1 s, 1.9 m offset kept, no failsafe | gate opens on the first corrupted message (step error 2.0 m), PX4 dead-reckons, failsafe at +8 s, descends and lands in place |
+
+`vio_health_gate.py` (between VIO and the bridge): stops forwarding, latched, when
+|Δp − R v Δt| > 0.15 m between consecutive messages, turning a jump into a dropout
+that PX4 fails safe on. **Real drone needs:** (1) the gate or equivalent VIO health
+monitor on the companion computer (OpenVINS covariance / feature count / step
+consistency), (2) a second, independent position or velocity source (optical flow +
+rangefinder, or GNSS outdoors) — a slow self-consistent drift cannot be detected from
+vision alone, and with EV as the only aiding source EKF2 will reset to whatever vision
+says, (3) EKF2_NOAID_TOUT / COM_FAIL_ACT_T reviewed for the failsafe latency (8 s from
+fault to descent here), (4) the vision HOLD at touchdown, or ZUPT keyed on PX4's
+landed state (HANDOFF open issue), so post-landing VIO divergence never reaches PX4.
+Earlier finding stands: the first fault flight failed to ARM once (reason not logged;
+rerun armed) — counted as an intervention in the protocol.
+
+**1d — full-covariance NEES** for closed-loop flights: `cl_nees.py` extracts the IMU
+pose block of every recorded joint covariance, then diag (all states, and the subset)
+and full NEES. i4 (§64): ori diag 4.74 → full 6.18, rp 5.16 → 7.79, pos 0.50 → 0.60.

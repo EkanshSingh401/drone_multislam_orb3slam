@@ -27,7 +27,7 @@ from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 HZ = 20.0
 P_BASE_IMU = (0.12 - 0.00552, 0.0051, 0.242 - 0.01174)  # IMU in base_link (FLU), as ov_prep.py
@@ -59,6 +59,7 @@ class OffboardExecutor(Node):
         self.pub_sp = self.create_publisher(TrajectorySetpoint, f"{pre}/fmu/in/trajectory_setpoint", q)
         self.pub_cmd = self.create_publisher(VehicleCommand, f"{pre}/fmu/in/vehicle_command", q)
         self.pub_log = self.create_publisher(String, "~/log", 10)
+        self.pub_vio_hold = self.create_publisher(Bool, "~/vio_hold", 10)
         for s in ("_v1", ""):
             self.create_subscription(VehicleStatus, f"{pre}/fmu/out/vehicle_status{s}", self._on_status, q)
             self.create_subscription(VehicleLandDetected, f"{pre}/fmu/out/vehicle_land_detected{s}", self._on_land, q)
@@ -245,26 +246,26 @@ class OffboardExecutor(Node):
                 self.cmd(VehicleCommand.VEHICLE_CMD_NAV_LAND)
                 self.go("land")
         elif self.phase == "land":
-            # Touchdown -> disarm at once. With PX4 flying on vision only, OpenVINS's
-            # post-touchdown divergence (stationary, no parallax) would otherwise keep
-            # PX4 "correcting" a drifting pose. Primary: PX4's own land detector
-            # (thrust-based ground contact); fallback: OpenVINS near takeoff height
-            # and not descending for 1 s.
+            # Touchdown -> disarm. PRIMARY: PX4's land detector (landed / maybe_landed).
+            # BACKUP: OpenVINS within 5 cm of the takeoff height and no longer
+            # descending -- OpenVINS is accurate up to contact and diverges within ~1 s
+            # after it (s64), so the backup must not wait. (The earlier 0.15 m threshold
+            # disarmed in the air before contact, which is why PX4's detector never got a
+            # chance to report; overnight Stage 1b.)
             _, _, pz, _ = self.ov_pose()
             vz = self.odom.twist.twist.linear.z
             ld = self.land_det
-            px4_says = ld is not None and (ld.ground_contact or ld.maybe_landed or ld.landed)
-            # OpenVINS is accurate up to contact but starts diverging AT touchdown
-            # (s64: z 0.23 -> 0.72 m within 2 s), so no stillness wait: disarm the
-            # moment the estimate reaches the ground.
-            ov_says = pz < self.home[2] + 0.15
+            # below 0.4 m: stop feeding vision so PX4 touches down on IMU dead-reckoning
+            self.pub_vio_hold.publish(Bool(data=bool(pz < self.home[2] + 0.4)))
+            px4_says = ld is not None and (ld.landed or ld.maybe_landed)
+            ov_says = tp > 2.0 and pz < self.home[2] + 0.12 and abs(vz) < 0.15
             if armed and (px4_says or ov_says):
-                self.td_since = self.td_since or t
-                if True:
-                    self.get_logger().info(f"touchdown (px4={px4_says}, ov z={pz:.2f}): force disarm")
-                    self.cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0, param2=21196.0)
-            else:
-                self.td_since = None
+                if self.td_since is None:
+                    self.td_since = t
+                    self.get_logger().info(f"touchdown (px4 landed={ld.landed if ld else None} "
+                                           f"maybe={ld.maybe_landed if ld else None} contact={ld.ground_contact if ld else None}, "
+                                           f"ov z={pz:.2f}, by={'px4' if px4_says else 'openvins'}): force disarm")
+                self.cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=0.0, param2=21196.0)
             if not armed and tp > 3.0:
                 self.get_logger().info("landed and disarmed")
                 self.go("done")

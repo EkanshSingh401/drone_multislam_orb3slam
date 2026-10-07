@@ -31,5 +31,5 @@ target_link_libraries(exploration_planner active_slam_information::active_slam_i
 ament_target_dependencies(exploration_planner rclcpp sensor_msgs nav_msgs geometry_msgs std_msgs active_slam_msgs ov_core ov_init ov_msckf)
 
 install(TARGETS octomap_mapper exploration_planner DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS scripts/offboard_executor.py DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/offboard_executor.py scripts/vio_fault_injector.py scripts/vio_health_gate.py DESTINATION lib/${PROJECT_NAME})
 ament_package()
