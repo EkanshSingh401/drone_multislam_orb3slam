@@ -273,6 +273,11 @@ Later / noted, not started:
 
 ## 7. Retractions and corrections (do not reuse these numbers)
 
+- **§62 "forest usage drops for viewing-angle change > 5° (0.81) and > 10° (0.62)"**:
+  did not replicate. On path C (§63, 10x more large-angle records) usage beyond
+  10° is 0.937, no lower than below 5° (0.922). The §62 bins were small (n=157 at
+  > 10°). In sim, usage does not depend on viewing angle.
+
 - **All OpenVINS position NEES before §55** (§53 table, its "vertical σ ≈ 2.4 mm",
   §54 position NEES): `ov_prep.py` read position σ from the wrong std-file
   columns (p_y, p_z, v_x). Fixed in §55. Orientation/roll-pitch NEES stand.
@@ -317,6 +322,11 @@ Later / noted, not started:
 - Basalt's Sim(3) scale is +0.4 to +2.2% on every bag (§59): its calibration is
   verified honoured (pinhole, our intrinsics, time offset 0), so not a config
   mismatch; internal to Basalt, not pursued.
+- **In sim, measurement usage is ~geometry-independent (§63)**: ~92% per camera,
+  stereo-partner loss looks random, no viewing-angle effect on path C. A
+  feature-quality predictor therefore cannot be learned from these images; it
+  needs degraded images (simulated blur/noise/exposure, or real D455 data).
+  p(used) stays in the predictor as a constant correction (~0.92).
 - **Landmark usage model is sim-only (§63).** p(used) (additive logistic over
   binned viewing-angle change, depth, border distance, both-cameras term;
   `docker/out/diag_s63/usage_model.*`) was fitted on near-noise-free Gazebo images,
