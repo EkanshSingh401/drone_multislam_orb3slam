@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>active_slam_sim</name>
+  <version>0.1.0</version>
+  <description>Closed-loop active SLAM in sim (PATCHES s64): CPU OctoMap mapper behind the nvblox interface, frontier and information-gain exploration planners, PX4 offboard executor.</description>
+  <maintainer email="ekanshsingh38@gmail.com">Ekansh Singh</maintainer>
+  <license>GPL-3.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>active_slam_msgs</depend>
+  <depend>active_slam_information</depend>
+  <depend>ov_core</depend>
+  <depend>ov_init</depend>
+  <depend>ov_msckf</depend>
+  <depend>px4_msgs</depend>
+  <depend>liboctomap-dev</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

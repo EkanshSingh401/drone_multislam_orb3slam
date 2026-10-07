@@ -2951,3 +2951,85 @@ per camera (with a real but rare one-camera-visible effect). As a gain
 correction it removes the bias (1.11 → 1.03, and 0.99 on path C); it cannot
 reduce the spread. HANDOFF records that it must be refit on real D455 data and
 is the baseline a learned feature-quality predictor has to beat.
+
+## 64. Closed loop in sim, first milestone: both planners fly autonomously without collision
+
+**Architecture** (`active_slam_sim` package in this repo; harness
+`docker/tools/closed_loop/`; open_vins fork local commit for `init_wait_for_jerk`).
+- **Mapping: OctoMap (C++ library, `liboctomap-dev` 1.9.7, already in the image).**
+  Voxblox is ROS 1-only (no maintained ROS 2 port); OctoMap's explicit
+  unknown/free/occupied states give frontiers directly. `octomap_mapper` inserts
+  the depth image (32FC1, cam0 = depth camera, rig `gz_x500_d455`, D455_DEPTH=1)
+  at 5 Hz with the OpenVINS pose, 0.1 m voxels, 8 m range; carves the vehicle's
+  own volume as free (0.5 m sphere, never observed by the forward camera). It
+  publishes the **nvblox interface**: `/nvblox_node/static_esdf_pointcloud`
+  (PointCloud2 x y z intensity = distance; ESDF slice at the flight height,
+  exact 2D EDT — Felzenszwalb, verified against brute force on 20 random grids;
+  only observed cells, like nvblox), plus `~/frontiers` and `~/coverage`.
+- **Estimation → PX4: vision only.** EKF2 `GPS_CTRL 0, EV_CTRL 15, HGT_REF 3
+  (vision), MAG_TYPE 5 (none), EV_NOISE_MD 0, EV_POS = IMU lever arm (0.1145,
+  −0.0051, −0.2303) FRD, COM_ARM_WO_GPS 1`. Live OpenVINS (`run_subscribe_msckf`)
+  → existing `openvins_to_px4` FLU→NED converter → `/px4_1/fmu/in/vehicle_visual_odometry`
+  (px4_msgs of this SITL; the real drone needs px4_msgs matched to its firmware).
+  To have a pose before takeoff, OpenVINS initializes at rest: new fork option
+  `init_wait_for_jerk` (−1 auto = stock, 0 = no wait; used here). PX4's local
+  frame is then OpenVINS's global frame; it is NOT Gazebo-aligned (a fixed-coordinate
+  scripted square flew mirrored in Gazebo x), so planning is done in that frame
+  with the map built in it. Validation flight on vision only (path A): OpenVINS
+  ATE 1.2 cm.
+- **Planners** (`exploration_planner`, same pipeline, `planner_type`):
+  frontier voxels in the flight band binned into 1.5 m tiles; per tile a
+  viewpoint pulled back from the tile centroid toward the drone by 1.2 m into
+  observed space with ESDF ≥ r_safe and a straight path with ESDF ≥ r_path, or a
+  turn-in-place if the tile is closer; a tile is dropped after 2 attempts.
+  (a) `frontier`: nearest by travel + 0.5 m/rad turning; ignores covariance.
+  (b) `ig`: each candidate scored by predicted information gain — OpenVINS's own
+  `Propagator::predict_and_compute` over the travel time (synthetic level,
+  constant-velocity IMU), clone at the candidate, p(used) = 0.92 constant, real
+  SLAM landmarks plus the tile's frontier voxels as virtual landmarks (σ_l = 1 m,
+  `augment_with_virtual_landmarks`), ranked by posterior log-det.
+- **Offboard executor** (`offboard_executor.py`, OffboardControlMode +
+  TrajectorySetpoint, DO_SET_MODE offboard, arm): climb to 1.5 m (OpenVINS-frame
+  IMU height, ~1.45 m base_link AGL), follow planner goals at 0.5 m/s,
+  explore ≤ 180 s, retrace the flown path home (0.1 m breadcrumbs, facing the
+  direction of travel), land, force-disarm the moment OpenVINS reaches the
+  ground. ESDF hold guard (0.45 m) in every airborne phase.
+- **Sim-only safety pilot** (`gt_watchdog.py`, harness, not product):
+  force-disarm if OpenVINS and GT disagree by > 1 m (rotation-invariant: distance
+  from takeoff + height) or GT leaves the scene; logged as TERMINATED (failure).
+
+**Failures found and fixed on the way (all in my new code):**
+planner declared "done" before takeoff; executor left the climb on the setpoint,
+not the vehicle; frontier connected-components merged the whole rim (one
+meaningless cluster); spinning in place forever on frontier tiles beyond mapper
+range (attempt limit, 8 m range); straight unchecked home leg → retrace;
+**post-touchdown OpenVINS divergence with PX4 still armed** (vision-only PX4 then
+"corrects" a drifting pose: a 100 m flyaway in one run, hops in another) →
+immediate force-disarm at OpenVINS ground contact (OpenVINS is accurate up to
+contact and diverges within ~1 s after); one IG run terminated by the watchdog
+in the air (OpenVINS yaw jump while retracing home with the camera turned away,
+next to a box) → home leg faces travel; one IG run with 0.21 m GT clearance
+(rotor contact) on the home leg (ESDF 0.10 m seen but the guard only ran in
+explore; breadcrumbs cut corners; r_path 0.5 m from the IMU left ~6 cm) → guard
+in all phases, 0.1 m crumbs, r_safe 1.0, r_path 0.8. PX4's
+`/px4_1/fmu/out/vehicle_land_detected` is bridged but never reported contact
+before the OpenVINS check fired; not investigated.
+
+**Milestone runs (identical final configuration), validation scene:**
+
+| | frontier (f8) | ig (i4) |
+|---|---|---|
+| outcome | explore 180 s → home → land → disarm | planner done at 156 s → home → land → disarm |
+| watchdog | no termination | no termination |
+| goals | 127 | 36 |
+| GT path | 34.3 m, x [−3.1, 0.1], y [−0.3, 2.7] | 102.3 m, x [−3.4, 4.8], y [−3.3, 2.5] |
+| min GT clearance (contact < 0.33) | 0.85 m (wall_w) | 0.49 m (wall_w) |
+| known volume @ 30/60/120/180 s (m³) | 927 / 1089 / 1219 / 1328 | 920 / 1267 / 1642 / 1837 |
+| OpenVINS ATE (GT window) | 0.014 m (max 0.046), Sim(3) 0.999 | 0.044 m (max 0.175), Sim(3) 1.005 |
+| NEES diag ori / rp (in-95) | 2.73 (0.86) / 2.66 (0.88) | 4.74 (0.77) / 5.16 (0.73) |
+| NEES pos | 0.07 | 0.50 |
+
+Both planners complete an autonomous vision-only flight in the validation
+scene without collision. Flight logs: `docker/out/cl/{f8,i4}/` (executor JSON
+log, planner decisions per replan, mapper coverage, OpenVINS state, flight bag
+with GT). Not a comparison: one flight each, no tuning; stopping here as asked.

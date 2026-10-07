@@ -59,7 +59,11 @@ gain over 1 s segments: 1.31x optimistic as built, 1.09x with OpenVINS's
 propagation included (§61). Of the remaining ~10%: visible-but-unused
 measurements over-predict ~3 nats/s (mostly features tracked in one camera only),
 MSCKF + new landmarks under-predict ~0.6 nats/s; predicting exactly the used
-measurements matches realized (§62). Closed loop (step 5) not started.
+measurements matches realized (§62). Closed loop in sim (§64): PX4 SITL on OpenVINS vision only,
+OctoMap mapper behind the nvblox interface, frontier and IG planners: **both
+complete autonomous flights without collision** (first milestone; no comparison
+yet). Vision-only flight needs immediate disarm at touchdown (OpenVINS diverges
+on the ground within ~1 s) — the same hazard applies on hardware.
 **Note:** predicted vs realized is measured against OpenVINS's own covariance, so
 it validates agreement with the filter's belief; NEES separately measures whether
 that belief is true (orientation still overconfident, §58–§59).
