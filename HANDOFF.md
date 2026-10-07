@@ -376,7 +376,7 @@ Later / noted, not started:
   space (92% FOV failures; predictor validated vs GT); pose term split logged (a meas / b travel);
   new pose_cov candidate set `yaw_samples`/`path_spacing` (old = 1 / 0); NEES jump at λ ≥ 1 is the
   home phase (ESDF-guard hover stalls, no timeout; low yaw rate), not exploration. Step-5 run:
-  `docs/day3/d3_step5.list` → `/out/cl/d3_step5_results.jsonl`.
+  `docs/day3/d3_step5.list` → results in `docs/day3/` (§72): new set → NEES 19–41 (low yaw rate).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

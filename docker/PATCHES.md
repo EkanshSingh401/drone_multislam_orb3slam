@@ -3191,3 +3191,10 @@ The jump is the HOME phase: 3 of 6 λ ≥ 1 flights hovered 314–460 s held by 
 guard (home-phase guard has no timeout), NEES median 23–43 growing with hover duration; 2 more
 flew long straight home legs with yaw rate ≈ 0.03 rad/s (NEES 15–24). Low rotational excitation
 explains it (cf. §58 slow segments). Estimator unchanged.
+
+## 72. Day 3 step 5: λ sweep on the new candidate set
+
+40 flights (`docs/day3/d3_step5.list`, results `docs/day3/d3_step5_results.jsonl`, table
+`d3_step5_table.md`, plot `d3_step5_tradeoff.png`). Coverage rises and ATE rises with λ; orientation
+NEES 19–41 (window mean) at every λ vs frontier 4.3; explore yaw rate 0.07–0.15 rad/s vs 0.3–0.55.
+Step 4 replicated (yaw rate ρ −0.72). Failures: 0 in-air, 0 contacts, 1 frontier arm failure.
