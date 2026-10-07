@@ -18,6 +18,7 @@ import rosbag2_py
 from rclpy.serialization import deserialize_message, serialize_message
 from sensor_msgs.msg import Image, Imu
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 try:
     from active_slam_sim_py.degrade import PRESETS, degrade

@@ -3100,3 +3100,14 @@ objective is ~91–97% virtual-frontier-landmark gain across sigma_l 0.01–3 m;
 sweep is flat within the spread for coverage/ATE; forest coverage metric suspect
 (known volume decreasing); post-landing disarm missed in 17/32 flights (sim-only
 watchdog disarmed on the ground).
+
+## 67. Overnight Stage 5: simulated D455 IR degradation and landmark usage
+
+`active_slam_sim_py/degrade.py` (light, gain, shot + read noise, rotational motion blur
+over the exposure from the gyro; presets mild/moderate/severe) and
+`scripts/degrade_bag.py` (offline, same stamps). Validation path C and forest path A ×
+3 levels, replayed with the s62 decomposition (estimator config unchanged). Usage falls
+with degradation (forest 0.93 → 0.85; records −54% at severe, i.e. a smaller map);
+near-feature and fast-rotation usage drop in the forest at moderate/severe (0.42–0.76);
+one flight per condition. Validation-moderate replay failed (empty log). Table:
+MORNING_REPORT.md.

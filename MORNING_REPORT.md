@@ -82,11 +82,33 @@ rises at the top of the sweep (σ_l = 3: 17.9). No "best" value picked.
 | IG real share | — | 0 [0–0.08] |
 | in-flight failures | 0 | 0 |
 
-## Stage 5 — image degradation: PARTIAL (see bottom; replays were still running at writing time)
+## Stage 5 — image degradation: DONE (1 of 6 replays failed)
 Degradation module (`active_slam_sim/active_slam_sim_py/degrade.py`: low light + gain,
-shot + read noise, rotational motion blur from the gyro over the exposure) and an offline
-bag tool; clean rig stays default. Preview: `docs/overnight/degrade_preview.png`. 6 degraded
-datasets made (validation path C and forest path A × mild/moderate/severe).
+shot + read noise, rotational motion blur from the gyro over the exposure) and offline bag
+tool (`degrade_bag.py`); clean rig stays the default; not yet wired live (DECISIONS.md).
+Preview: `docs/overnight/degrade_preview.png`. 6 datasets = validation path C and forest
+path A × mild / moderate / severe; OpenVINS replayed (estimator config unchanged) with the
+s62 instrumentation; **validation-moderate replay failed** (empty log, not investigated).
+
+Usage of predicted-visible (frame, landmark, camera), by bin:
+
+| scene / level | usage | records | by angular speed [0,.05,.2,.5,1,3] rad/s | by depth [0,2,4,8,12,30] m | by border [0,20,50,100,500] px |
+|---|---|---|---|---|---|
+| validation C clean | 0.935 | 70.8k | .93 .94 .94 .94 .92 | .88 .90 .94 .99 – | .73 .83 .97 .94 |
+| validation C mild | 0.934 | 70.6k | .92 .95 .95 .95 .92 | .88 .95 .94 .88 – | .88 .94 .94 .93 |
+| validation C severe | 0.901 | 64.9k | .90 .91 .91 .90 .87 | .79 .88 .91 .94 – | .74 .83 .89 .91 |
+| forest A clean | 0.929 | 22.6k | .92 .94 .95 .90 .93 | – .89 .94 .94 .87 | .93 .94 .93 .92 |
+| forest A mild | 0.906 | 19.8k | .91 .88 .90 .94 .88 | – .96 .93 .92 .83 | .81 .97 .91 .89 |
+| forest A moderate | 0.861 | 15.8k | .86 .87 .87 – .76 | .66 .78 .88 .83 .85 | .85 .94 .86 .84 |
+| forest A severe | 0.852 | 10.4k | .85 .88 .87 – – | .42 .86 .86 .89 .84 | .76 .85 .82 .86 |
+
+**Answer: partly.** Degradation lowers usage (forest 0.93 → 0.85) and, more strongly, shrinks
+the map (forest records −54% at severe: fewer SLAM landmarks). A geometry/motion dependence
+starts to appear at moderate/severe in the forest — near features (< 2 m: 0.42–0.66) and fast
+rotation (> 1 rad/s: 0.76) — but most bins stay within a few points of the level's mean, and
+each condition is a single flight, so this is a direction, not a result. A feature-quality
+predictor now has signal to learn from in degraded sim; it needs more flights per level and
+the live rig wiring.
 
 ## What needs you
 1. **Collisions with the IG planner** (validation: 2 contacts in 17 IG flights across Stages
@@ -102,5 +124,7 @@ datasets made (validation path C and forest path A × mild/moderate/severe).
    virtual landmark count before interpreting IG vs frontier as "information-driven".
 4. **Forest coverage metric looks broken** (decreasing known volume): verify before using
    Stage 4 numbers.
-5. Real drone requirements from Stage 1c (VIO health monitor, second position source,
+5. Stage 5 needs more flights per degradation level (one each now) and the live wiring;
+   the validation-moderate replay failure is unexplained.
+6. Real drone requirements from Stage 1c (VIO health monitor, second position source,
    failsafe timing, touchdown handling) — see PATCHES §65.
