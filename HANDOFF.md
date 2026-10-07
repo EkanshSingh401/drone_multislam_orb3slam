@@ -365,7 +365,7 @@ Later / noted, not started:
   (2) post-landing disarm missed in 17/32 flights (sim watchdog disarmed on the ground):
   vision-only PX4 + OpenVINS ground divergence is a flyaway risk on hardware;
   (3) IG objective ~95% virtual-landmark gain at every sigma_l tried (0.01–3 m);
-  (4) forest coverage metric decreasing over time — verify before using Stage 4;
+  (4) forest coverage 'decrease' was a reporting artifact (fixed, §68; use *_v2 results);
   (5) VIO jump/drift faults: PX4 follows them unless gated (vio_health_gate); slow drift
   needs a second sensor.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);

@@ -69,3 +69,14 @@ Decisions made without the user, each with what / why / alternatives.
   test reference was wrong — corrected to R = s² I + H_x Σ_x H_xᵀ.
 - **Side finding logged, not acted on:** median real-landmark gain per candidate is 0.00 nats
   (most candidates predict no visible real SLAM landmark).
+
+## Day 2, step 2 — forest coverage metric
+- **Cause: a reporting artifact, not the mapper.** The recorded `/octomap_mapper/coverage`
+  stream is monotone in all 32 flights. `cl_report.py` skipped time points past the end of the
+  stream; most forest flights stop early (planner runs out of reachable frontiers), so the
+  aggregate's medians at 120/180 s were over a different (smaller) subset of flights than at
+  60 s. Fix: carry the last value forward past the end of the stream (mapped volume persists),
+  record where the stream ended, and check monotonicity (`coverage_monotone`,
+  `coverage_max_drop_m3`). All stages recomputed from the bags (`stage*_results_v2.jsonl`).
+- `ended_early_at_s` is where the recorded coverage stream ends relative to the start of
+  exploration (≈ landing/teardown), an upper bound on when exploration actually ended.

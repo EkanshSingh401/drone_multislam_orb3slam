@@ -3111,3 +3111,20 @@ with degradation (forest 0.93 → 0.85; records −54% at severe, i.e. a smaller
 near-feature and fast-rotation usage drop in the forest at moderate/severe (0.42–0.76);
 one flight per condition. Validation-moderate replay failed (empty log). Table:
 MORNING_REPORT.md.
+
+## 68. Day 2: sigma_l plumbing verified; coverage-report fix
+
+**sigma_l.** Value reaches the node (`ros2 param get`; now logged at startup and in every
+decision). Stage 3 decisions: virtual gain per virtual measurement 1.7 / 5.2 / 7.1 / 9.6 /
+12.7 nats at sigma_l 0.01 / 0.1 / 0.3 / 1 / 3 m (~2·ln 10 per decade). New test in
+active_slam_information (`c1e2845`): one virtual landmark scored alone matches
+log det(I + σ² H R⁻¹ Hᵀ), R = s²I + H_x Σ_x H_xᵀ, exactly over σ = 1e-4…10 m; 137/137 pass.
+The flat Stage 3 curve is real: the gain is logarithmic in σ_l above the crossover
+σ_l ≈ σ_px Z / f ≈ 9 mm, and every swept value was ≥ 10 mm. No rerun.
+
+**Coverage.** Monotone in all 32 recorded flights; the "decreasing" Stage 4 coverage was
+medians over different subsets of flights (time points past the end of shorter flights were
+skipped). `cl_report.py` now carries the last value forward and checks monotonicity; all
+stages recomputed (`docs/overnight/*_v2.jsonl`, `aggregate_v2.md`). Forest, median [range]:
+known @180 s frontier 1900 [1120–3880] m³, IG 2100 [1730–3220] m³; flights are short
+(coverage stream ends 63–157 s after exploration starts in 9 of 10) and overlap heavily.
