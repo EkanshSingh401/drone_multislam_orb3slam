@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cl_flight.sh <frontier|ig|pose_cov|script> <outdir> : one closed-loop exploration flight (PATCHES s64; overnight stages)
-# env: PX4_HGT_REF (EKF2_HGT_REF; day 6 default 0 = baro so PX4 keeps a valid height after the
+# env: RECORD_DEPTH=0 (with RECORD_SENSORS: leave the depth stream out, ~3x smaller bags; day 7), PX4_HGT_REF (EKF2_HGT_REF; day 6 default 0 = baro so PX4 keeps a valid height after the
 #      vision hold at landing and its land detector can fire; 3 = vision, days 1-5), GEOFENCE (executor geofence_radius, m, as a double; office: 40.0), EXECUTOR_ARGS (extra "-p k:=v" for the executor, day 5), WORLD (validation|forest, default validation), MAX_MISSION (s, default 180),
 #      RECORD_SENSORS=1 (day 4: also record stereo IR, IMU, depth for offline replay), LAMBDA, YAW_SAMPLES, PATH_SPACING (day 3 candidate set), PLANNER_ARGS (extra "-p k:=v" for the planner, e.g. sigma_virtual),
 #      FAULT_MODE (none|dropout|drift|jump), FAULT_T (s after airborne), FAULT_DUR, FAULT_DRIFT, FAULT_JUMP
@@ -18,7 +18,7 @@ mkdir -p $OD/ov_config && cp /opt/config_sim_only/*.yaml $OD/ov_config/ && echo 
 ros2 bag record -s mcap -o $OD/flight.bag /ground_truth/pose_info /clock /ov_msckf/odomimu /openvins/joint_covariance \
   /exploration_planner/decision /exploration_planner/goal /octomap_mapper/coverage /offboard_executor/log \
   /px4_1/fmu/out/vehicle_local_position_v1 /px4_1/fmu/out/vehicle_status_v1 /px4_1/fmu/out/vehicle_land_detected \
-  /px4_1/fmu/out/failsafe_flags /px4_1/fmu/out/estimator_status_flags /ov_msckf/odomimu_px4 /ov_msckf/odomimu_gated /ov_msckf/points_msckf /ov_msckf/points_slam /script_goals/segment ${RECORD_SENSORS:+/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/imu /camera/depth/image_rect_raw} > $OD/record.log 2>&1 &
+  /px4_1/fmu/out/failsafe_flags /px4_1/fmu/out/estimator_status_flags /ov_msckf/odomimu_px4 /ov_msckf/odomimu_gated /ov_msckf/points_msckf /ov_msckf/points_slam /script_goals/segment ${RECORD_SENSORS:+/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/imu} $([[ -n "${RECORD_SENSORS:-}" && "${RECORD_DEPTH:-1}" != 0 ]] && echo /camera/depth/image_rect_raw) > $OD/record.log 2>&1 &
 sleep 3
 /root/ws_offboard_control/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf --ros-args -r __ns:=/ov_msckf \
   -p config_path:=$OD/ov_config/openvins_estimator_config.yaml -p use_sim_time:=true -p verbosity:=INFO \

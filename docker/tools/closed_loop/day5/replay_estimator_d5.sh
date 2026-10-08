@@ -113,6 +113,14 @@ if [[ "${EST}" == "openvins_serial" ]]; then
             || { echo "replay: failed to set ${k}=${v}" >&2; exit 2; }
         log "OV_SET ${k}: ${v}"
     done
+    # OV_APPEND="key: value;key: value" (day 7): append keys missing from the copied estimator config
+    # (e.g. init_wait_for_jerk: 0, which the live closed-loop harness appends), asserted.
+    if [[ -n "${OV_APPEND:-}" ]]; then
+        IFS=';' read -ra kvs <<< "${OV_APPEND}"
+        for kv in "${kvs[@]}"; do echo "$kv" >> "${OV_CFG_DIR}/openvins_estimator_config.yaml"
+            grep -qx "$kv" "${OV_CFG_DIR}/openvins_estimator_config.yaml" || { echo "replay: failed to append $kv" >&2; exit 2; }
+            log "OV_APPEND $kv"; done
+    fi
     # OV_IMU_RW="acc gyro": random-walk override in the copied kalibr_imu_chain.yaml
     # -- a diagnostic replay (PATCHES s55), asserted.
     if [[ -n "${OV_IMU_RW:-}" ]]; then

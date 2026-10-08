@@ -272,3 +272,24 @@ Decisions made without the user, each with what / why / alternatives.
 - **Step 3 plain variant moved** before any plain-office flight (frontier never reaches x > 4 m).
 - **Step 4 window**: 20 s, step 10 s, ≥ 1 m path; drift as relative pose error (no alignment); GT
   interpolated at OpenVINS state times.
+
+## Day 7 (2026-10-10; user: is the cov-vs-drift mismatch a sim image artifact or real?)
+- **Disk budget up front**: sensor flights were 20–25 GB (float32 depth dominates). Recorded WITHOUT depth
+  (`RECORD_DEPTH=0`; the mapper still uses it live; steps 2–3 take depth from GT geometry): 5.6–8 GB each.
+  Freed 157 GB of regenerable copies: uncompressed `.mcap` files that rosbag2 leaves beside file-compressed
+  (`.zstd`) bags when they are read — deleted only where metadata.yaml references the `.zstd` original.
+- **Step 1/2 instrumentation** in the scratch OpenVINS build (`/out/cl/day5/ovws`, patch in
+  `docker/tools/closed_loop/day7/ov_nis.patch`): `OV_NIS_LOG` prints χ²/dof per MSCKF and SLAM feature update
+  (before gating) and SLAM features' per-axis normalized residuals r/√S_ii (cam0); `OV_TRK_LOG` prints cam0
+  tracked feature ids and pixels per frame. Default off. Compiled in a gap between flights.
+- **Whiteness definition**: lag-1 correlation of each SLAM feature's normalized residual across its
+  consecutive updates, pooled. MSCKF features are used once, so only their NIS is reported.
+- **KLT truth**: 3D point from the first observation's ray cast into scenes.py geometry from the GT camera
+  pose; later true pixels by projection. Measures what tracking adds after detection.
+- **Sensor flight d7_sens_tex_fr_2 failed** (climb timeout at OpenVINS z 0.46 m; landed safely): PX4's baro
+  height was ~1 m off at takeoff and the executor only learns the height offset once OpenVINS's base height
+  exceeds 0.4 m. Counted, not re-flown (9 flights remain). Fix for later: learn while either height says
+  airborne.
+- **Replays use `init_wait_for_jerk: 0`** like the live harness (new OV_APPEND hook): without it the 5 Hz
+  replay initialized only at the end of a flight. First replay batch discarded (configuration), rerun.
+- **Rates**: sim 15 Hz = track_frequency 20 at 30 fps (system setting) vs 5 Hz; EuRoC 21/10.5/5.25.

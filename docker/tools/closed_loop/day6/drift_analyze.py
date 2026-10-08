@@ -46,6 +46,18 @@ for name, y in T.items():
         for f in set(fo):
             tr = fo != f; b = np.linalg.lstsq(A[tr], yl[tr], rcond=None)[0]; pred[~tr] = A[~tr] @ b
         b = np.linalg.lstsq(A, yl, rcond=None)[0]
+        # day 7: leave-one-SCENE-out (train on the other scenes, standardize with the training set)
+        wo = worlds[o]; loso = {}
+        Zr = np.column_stack([X[k][o] for k in keys])
+        for sc in sorted(set(wo)):
+            tr = wo != sc
+            if tr.sum() < 30 or (~tr).sum() < 10: continue
+            mu, sd = Zr[tr].mean(0), Zr[tr].std(0); At = np.c_[np.ones(tr.sum()), (Zr[tr] - mu) / sd]; Ae = np.c_[np.ones((~tr).sum()), (Zr[~tr] - mu) / sd]
+            bb = np.linalg.lstsq(At, yl[tr], rcond=None)[0]; pe = Ae @ bb; ye = yl[~tr]
+            loso[sc] = {'n': int((~tr).sum()), 'r2': round(float(1 - np.sum((ye - pe) ** 2) / np.sum((ye - ye.mean()) ** 2)), 3),
+                        'spearman_pred': round(float(stats.spearmanr(pe, ye)[0]), 3)}
+        pooled = []
+        r['log_ols_loso'] = loso
         r['log_ols'] = {'n': int(o.sum()), 'predictors': keys, 'std_coef': [round(float(v), 3) for v in b[1:]],
                         'r2_lofo': round(float(1 - np.sum((yl - pred) ** 2) / np.sum((yl - yl.mean()) ** 2)), 3)}
     out['targets'][name] = r
