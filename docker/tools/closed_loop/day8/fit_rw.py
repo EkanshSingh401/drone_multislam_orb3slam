@@ -6,8 +6,9 @@ Tracks from klt_tracks.py. Model, per image axis: e_k = e_(k-1) + d_k, d_k ~ N(0
 fitted by least squares on the per-track log of the mean squared increment (training tracks only: the
 validation scene; office and plain office are fully held out), Huber-robust (3 IRLS passes).
 Held-out evaluation: Spearman and R^2 (log) of predicted vs measured q2; random-walk shape check:
-z_k = |e_k| / sqrt(2 k q2_hat) per track and age k, RMS(z) by age (1 if the error grows as a random walk at
-the predicted rate; a white-noise error would give RMS(z) falling like 1/sqrt(k)); same with the pooled
+median over tracks of |e_k|^2 / (1.386 k q2_hat) by age k (1 at every age if the error grows as a random walk
+at the predicted rate; a white-noise error would fall like 1/k); targets are the robust per-track rates
+q2_rw = median_k |e_k|^2 / (1.386 k); same with the pooled
 constant q2 (no covariates) for comparison. Per surface kind for the plain office."""
 import json, sys
 import numpy as np
@@ -16,7 +17,15 @@ F = ['min_eig', 'depth', 'cos_view', 'flow', 'dt']
 def X(rows):
     return np.column_stack([np.log(np.maximum([r['min_eig'] for r in rows], 1e-3)), np.log([r['depth'] for r in rows]),
                             [r['cos_view'] for r in rows], np.log(np.array([r['flow'] for r in rows]) + 0.1), np.log([r['dt'] for r in rows])])
-def load(p): return [r for r in map(json.loads, open(p)) if r['q2'] > 0 and r['n'] >= 5]
+def q2_rw(r):
+    """robust random-walk rate of one track: median over ages k of |e_k|^2 / (1.386 k) (2-D Gaussian:
+    median |e|^2 = 2 ln2 x per-axis variance)."""
+    e = np.array(r['e_abs'][1:]); k = np.arange(1, len(e) + 1)
+    return float(np.median(e ** 2 / (1.386 * k)))
+def load(p):
+    rows = [r for r in map(json.loads, open(p)) if r['n'] >= 5]
+    for r in rows: r['q2'] = q2_rw(r)
+    return [r for r in rows if r['q2'] > 0]
 tr, te = load(sys.argv[1]), load(sys.argv[2])
 Xtr, ytr = X(tr), np.log([r['q2'] for r in tr])
 mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-12
@@ -37,8 +46,10 @@ def evaluate(rows):
         zs = {a: [] for a in (1, 2, 5, 10, 20, 30)}
         for r, q in zip(rows, qh):
             for a in zs:
-                if a < len(r['e_abs']): zs[a].append(r['e_abs'][a] / np.sqrt(2 * a * q))
-        out[f'rms_z_by_age_{name}'] = {a: round(float(np.sqrt(np.mean(np.square(v)))), 2) for a, v in zs.items() if len(v) > 10}
+                if a < len(r['e_abs']): zs[a].append(r['e_abs'][a] ** 2 / (1.386 * a * q))
+        # 1.0 at every age = the error grows as a random walk at the predicted rate (median over tracks)
+        out[f'median_ratio_by_age_{name}'] = {a: round(float(np.median(v)), 2) for a, v in zs.items() if len(v) > 10}
+    out['frac_tracks_gross'] = round(float(np.mean([max(r['e_abs']) > 5 for r in rows])), 3)
     return out
 res = {'features': F, 'train_tracks': len(tr), 'train_flights': sorted({r['flight'] for r in tr}),
        'coef_standardized': dict(zip(['intercept'] + F, [round(float(v), 3) for v in b])),
@@ -54,4 +65,4 @@ json.dump(res, open(sys.argv[3], 'w'), indent=1)
 print(json.dumps({k: res[k] for k in ('train_tracks', 'coef_standardized', 'q2_constant_px2_per_frame', 'train_fit', 'test_all')}, indent=1))
 for k in ('test_by_world', 'test_by_kind', 'test_by_rate'):
     for kk, v in res[k].items():
-        if v: print(k, kk, v['tracks'], 'rho', v['spearman_q2'], 'R2', v['r2_log_q2'], 'bias', v['median_log_ratio_pred_over_meas'], 'z', v['rms_z_by_age_model'])
+        if v: print(k, kk, v['tracks'], 'rho', v['spearman_q2'], 'R2', v['r2_log_q2'], 'bias', v['median_log_ratio_pred_over_meas'], 'ratio', v['median_ratio_by_age_model'], 'gross', v['frac_tracks_gross'])

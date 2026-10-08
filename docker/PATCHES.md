@@ -3246,3 +3246,12 @@ NIS/whiteness (scratch build, `day7/ov_nis.patch`): SLAM residual lag-1 correlat
 (5 Hz), ~0.6 px after 1 s regardless of rate, plain surfaces 3–4x worse. 9 depth-free sensor flights replayed
 at 15/5 Hz: NEES rp 5.3 / 3.2; Spearman(σ growth, drift) pos 0.04 / 0.03, yaw 0.20 / 0.47. Drift regression
 leave-one-scene-out R² 0.10–0.66 (pos). Branch: stop, nothing built.
+
+## 77. Day 8: offset fix, ceiling, random-walk KLT model, drift prediction
+
+Executor: offset learning on either height. Ceiling (calibrated filter) raw Spearman pos 0.65–0.78, yaw 0.50–0.66;
+OpenVINS 0.06–0.19 / ≈0. Per-metre metric dominated by 1/path (retired as headline). Random-walk error model
+(validation-only fit): held-out shape ratio ≈ 1.0 ages 2–20, rate Spearman 0.46, plain surfaces 2–3x under.
+J_RW (differenced rows) in candidate_scoring.hpp + planner option + tests (7e-16, MC 1.3%). drift_model
+(held-out offices, raw): position RW 0.48 / 0.42 vs white 0.27 / 0.25, OV 0.19 / 0.14, geometry 0.54 / 0.43;
+yaw ≤ 0.18 for all. RW level 48x too high (mono tool).

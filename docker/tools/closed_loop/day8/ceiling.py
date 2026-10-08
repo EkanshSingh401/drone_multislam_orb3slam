@@ -39,11 +39,13 @@ def geom_lofo(W, y):
     pred[ok] = p
     return pred
 
+import os
+RAW = os.environ.get('CEIL_NORM', 'per_m') == 'raw'   # raw: per 20 s window, no path normalization
 out = {}; rng = np.random.default_rng(0)
 fig, axes = plt.subplots(len(sys.argv) - 2, 2, figsize=(9, 3.2 * (len(sys.argv) - 2)), squeeze=False)
 for row, arg in enumerate(sys.argv[2:]):
     name, path = arg.split('=', 1); W = load(path); n = len(W)
-    L = np.array([w['path_m'] for w in W])
+    L = np.ones(len(W)) if RAW else np.array([w['path_m'] for w in W])
     s0 = np.array([w['sig_p0'] for w in W]); s1 = np.array([w['sig_p1'] for w in W])
     y0 = np.array([w['sig_y0'] for w in W]); y1 = np.array([w['sig_y1'] for w in W])
     rel_p = np.sqrt(np.clip(s1 ** 2 - s0 ** 2, 0, None)); rel_y = np.sqrt(np.clip(y1 ** 2 - y0 ** 2, 0, None))
@@ -79,14 +81,19 @@ for row, arg in enumerate(sys.argv[2:]):
         xs = [b['sigma_rel_median'] * (1 if tgt == 'pos' else 180 / np.pi) for b in bins]
         ax.plot(xs, [b['rms_z'] for b in bins], color='#2a6fdb', lw=2, marker='o', ms=8)
         ax.axhline(1.0, color='#888888', lw=1, ls='--'); ax.set_xscale('log'); ax.set_yscale('log')
+        from matplotlib.ticker import NullFormatter, LogFormatterSciNotation
+        for a_ in (ax.xaxis, ax.yaxis): a_.set_minor_formatter(NullFormatter()); a_.set_major_formatter(LogFormatterSciNotation())
+        ax.tick_params(colors='#666', labelsize=8)
         ax.set_xlabel('predicted window σ (%s)' % ('m' if tgt == 'pos' else 'deg'), color='#444')
         ax.set_ylabel('RMS realized / predicted', color='#444'); ax.set_title(f'{name}: {"position" if tgt == "pos" else "yaw"}', fontsize=10)
         for sp in ('top', 'right'): ax.spines[sp].set_visible(False)
         ax.grid(alpha=0.2)
     out[name] = res
 fig.tight_layout(); fig.savefig(sys.argv[1] + '_calibration.png', dpi=120)
+out['norm'] = 'raw' if RAW else 'per_m'
 json.dump(out, open(sys.argv[1] + '.json', 'w'), indent=1)
 for name, res in out.items():
+    if name == 'norm': continue
     print(name, res['windows'], 'windows', res['flights'], 'flights; sigma shrank pos/yaw', res['frac_sigma_shrank_pos'], res['frac_sigma_shrank_yaw'])
     for t in ('pos', 'yaw'):
         r = res[t]

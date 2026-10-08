@@ -315,3 +315,7 @@ Decisions made without the user, each with what / why / alternatives.
   t0, static propagation, clones at 5 Hz, every tracked feature (TRK) as white 1 px or random-walk track
   (q² from the fitted model), landmark points from the GT ray cast (oracle geometry, moved into the
   estimate's frame) — so the comparison isolates the measurement model, not landmark estimation.
+- **Per-metre metric retired as headline**: 1/path alone correlates 0.63–0.68 with position drift per metre;
+  raw per-window drift has no shared normalization (raw path vs raw drift ≈ 0). Both reported, raw headline.
+- **Step 2 targets/statistics robust**: per-track rate = median_k |e_k|²/(1.386 k) (mean squared increments
+  were dominated by gross tracks); shape check = median over tracks, not RMS.
