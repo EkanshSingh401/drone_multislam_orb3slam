@@ -1,0 +1,12 @@
+d9_tex_a_fr_1 20 120
+d9_tex_a_fr_1 5 121
+d9_tex_b_fr_1 20 122
+d9_tex_b_fr_1 5 123
+d9_tex_a_pc0_1 20 124
+d9_tex_a_pc0_1 5 125
+d9_tex_b_pc0_1 20 126
+d9_tex_b_pc0_1 5 127
+d9_tex_a_fr_2 20 128
+d9_tex_a_fr_2 5 129
+d9_tex_b_fr_2 20 130
+d9_tex_b_fr_2 5 131

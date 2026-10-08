@@ -8,7 +8,7 @@ office / plain-office windows (day-7 replays, 15 and 5 Hz) with
            the VALIDATION-scene logged windows only (train_windows.jsonl), applied to the held-out windows
   ceiling  Spearman a calibrated filter would reach with the ov sigma_rel (500 draws; also with rw's sigma)
 All predictors and targets per metre of GT path. Spearman with 95% CI by bootstrap over flights."""
-import glob, json, sys
+import glob, json, os, sys
 import numpy as np
 from scipy import stats
 s4, trainp, s0, outp = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
@@ -19,7 +19,7 @@ for f in glob.glob(f'{s4}/*/drift_s0_{s0}.txt'):
         p = l.split()
         if p[0] == 'DRIFT': pred.setdefault(p[1], {})[p[2]] = (float(p[3]), float(p[4]))
 W = {}
-for f in ('/out/cl/day8/dwrep_tf20.jsonl', '/out/cl/day8/dwrep_tf5.jsonl'):
+for f in (os.environ.get('WIN_FILE', '/out/cl/day8/dwrep_tf20.jsonl'),) if os.environ.get('WIN_FILE') else ('/out/cl/day8/dwrep_tf20.jsonl', '/out/cl/day8/dwrep_tf5.jsonl'):
     for l in open(f):
         w = json.loads(l)
         if w.get('path_m', 0) >= 1.0: W[f"{w['flight']}_{w['t0']:.2f}"] = w
@@ -32,8 +32,8 @@ def gfit(target):
     return lambda w: float(np.r_[1, (np.array([w[k] for k in keys]) - mu) / sd] @ b) if all(w.get(k) is not None for k in keys) else np.nan
 gp, gy = (gfit('drift_pos_per_m'), gfit('drift_yaw_per_m')) if NORM == 'per_m' else (gfit('drift_pos_m'), gfit('drift_yaw_deg'))
 rng = np.random.default_rng(0); out = {'s0_px': float(s0), 'norm': NORM}
-for rate in ('tf20', 'tf5'):
-    ids = [i for i in pred if i in W and f'_{rate}_' in i and 'white' in pred[i] and 'random_walk' in pred[i]]
+for rate in (('live',) if os.environ.get('WIN_FILE') else ('tf20', 'tf5')):
+    ids = [i for i in pred if i in W and (rate == 'live' and i.startswith(os.environ.get('HELD_PREFIX', 'd7_')) or f'_{rate}_' in i) and 'white' in pred[i] and 'random_walk' in pred[i]]
     HAS_ST = all('random_walk_stereo' in pred[i] for i in ids)
     if not ids: continue
     w = [W[i] for i in ids]; Lp = np.array([x['path_m'] for x in w]); L = Lp if NORM == 'per_m' else np.ones(len(w)); fl = np.array([x['flight'] for x in w])
@@ -62,7 +62,7 @@ for rate in ('tf20', 'tf5'):
         r[t]['level_median'] = {'realized': float(np.median(real[t] * L)), 'rw': float(np.median(preds[t]['rw'] * L)), 'white': float(np.median(preds[t]['white'] * L)), 'ov': float(np.median((ov_p if t == 'pos' else ov_y)))}
     out[rate] = r
 json.dump(out, open(outp, 'w'), indent=1)
-for rate in ('tf20', 'tf5'):
+for rate in ('tf20', 'tf5', 'live'):
     if rate not in out: continue
     r = out[rate]; print(rate, r['windows'], 'windows', r['flights'], 'flights')
     for t in ('pos', 'yaw'):

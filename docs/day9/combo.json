@@ -1,0 +1,13 @@
+{
+ "deployable_rw_only": 0.04,
+ "deployable_geometry_only": 0.39,
+ "deployable_rw+geometry": 0.441,
+ "deployable_n_train_test": [
+  101,
+  133
+ ],
+ "oracle_lofo_rw_only": 0.488,
+ "oracle_lofo_geometry_only": 0.477,
+ "oracle_lofo_rw+geometry": 0.498,
+ "oracle_n": 133
+}

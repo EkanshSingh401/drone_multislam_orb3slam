@@ -412,6 +412,11 @@ Later / noted, not started:
 - **Day 8 (REPORT_2026-10-11.md, PATCHES §77):** random-walk KLT error model (fit `day8/fit_rw.py`,
   `docs/day8/rw_model.json`), `information_random_walk` + planner option `meas_model` (default white),
   `drift_model` tool. Use RAW per-window drift for ranking tests (per-metre is dominated by 1/path).
+- **Day 9 (REPORT_2026-10-12.md, PATCHES §78):** stereo random-walk error model (ρ 0.97, s_d 0.10 px) and a
+  units fix (random-walk parameters px -> normalized; day-8 RW numbers superseded); oracle-geometry ranking
+  0.52 / 0.48 raw, but the DEPLOYABLE predictor (estimator landmarks + mapper-surface features) ranks 0.04;
+  geometry regression 0.39–0.55 is the only deployable signal. Planner test not run. Training-only scenes
+  `texlevels_a/b` (gen_validation_world --variant). ROS_DOMAIN_ID must be <= 232.
 - **Hardware checklist (add before any real flight):** (1) OpenVINS diverges on the ground within ~1 s of
   touchdown (no parallax, ZUPT off) — vision must be withheld/latched at landing and disarm must not wait
   for it; (2) PX4's multicopter land detector is slow (did not fire within ~3 s of touchdown in sim even

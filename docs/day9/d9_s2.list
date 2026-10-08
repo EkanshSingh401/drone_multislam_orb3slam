@@ -1,0 +1,7 @@
+# day 9 step 2: TRAINING-only texture-level scenes (validation geometry), sensors without depth
+d9_tex_a_fr_1 frontier texlevels_a RECORD_SENSORS=1 RECORD_DEPTH=0
+d9_tex_b_fr_1 frontier texlevels_b RECORD_SENSORS=1 RECORD_DEPTH=0
+d9_tex_a_pc0_1 pose_cov texlevels_a LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0
+d9_tex_b_pc0_1 pose_cov texlevels_b LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0
+d9_tex_a_fr_2 frontier texlevels_a RECORD_SENSORS=1 RECORD_DEPTH=0
+d9_tex_b_fr_2 frontier texlevels_b RECORD_SENSORS=1 RECORD_DEPTH=0

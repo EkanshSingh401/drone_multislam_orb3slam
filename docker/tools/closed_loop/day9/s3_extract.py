@@ -8,8 +8,9 @@ Only what the drone has at the window start t0 (live flight data, system rate 15
               geometry from the GT camera pose (validated vs real depth, day 4/5), inserted at the OpenVINS
               camera pose, 0.1 m voxels, 2 Hz, flight start .. t0
   landmarks   (i) the estimator's SLAM landmarks in the joint covariance at t0 (estimates, OpenVINS frame);
-              (ii) predicted features on mapped surfaces: a 32 x 18 pixel grid cast from the window's waypoints
-              every 1 s into the voxel map (first occupied voxel within 8 m)
+              (ii) predicted features on mapped surfaces: a 16 x 9 pixel grid cast from the window's waypoints
+              every 2 s into the voxel map (first occupied voxel within 8 m), deduplicated at 0.1 m, at most
+              1000 per window (seeded subsample)
   tracks      each landmark's samples = waypoints where it projects into the image (2..846 x 2..478 px),
               is 0.3..8 m deep and not occluded by an occupied voxel nearer than it (ray march, 0.05 m), per
               camera (stereo); consecutive visible waypoints form a track, gaps restart it
@@ -34,7 +35,7 @@ M = json.load(open(sys.argv[1]))['model_raw']; b, mu, sd = map(np.array, (M['b']
 W_all = [json.loads(l) for l in open(sys.argv[2])]
 out = sys.argv[3]; os.makedirs(f'{out}/jc', exist_ok=True)
 ft = open(f'{out}/tasks.txt', 'a'); fm = open(f'{out}/meta.jsonl', 'a')
-gu, gv = np.meshgrid(np.linspace(20, 828, 32), np.linspace(20, 460, 18)); DCg = np.stack([(gu.ravel() - CX) / FX, (gv.ravel() - CY) / FY, np.ones(gu.size)], 1)
+gu, gv = np.meshgrid(np.linspace(30, 818, 16), np.linspace(30, 450, 9)); DCg = np.stack([(gu.ravel() - CX) / FX, (gv.ravel() - CY) / FY, np.ones(gu.size)], 1)
 DCg /= np.linalg.norm(DCg, axis=1)[:, None]
 eu, ev = np.meshgrid(np.arange(6, 848, 12), np.arange(6, 480, 12)); DCe = np.stack([(eu.ravel() - CX) / FX, (ev.ravel() - CY) / FY, np.ones(eu.size)], 1)
 DCe /= np.linalg.norm(DCe, axis=1)[:, None]
@@ -83,10 +84,18 @@ for name in sys.argv[4:]:
         t0 = w['t0']; t1 = t0 + 20.0
         k = np.searchsorted(jt, t0, side='right') - 1
         if k < 0: continue
-        occ = set()
-        for t, V in vox_t:
-            if t <= t0: occ.update(map(tuple, V))
-        if len(occ) < 100: continue
+        T_MAP = t0 + (20.0 if os.environ.get('MAP_AT_END') == '1' else 0.0)   # reference variant: map at the window end (NOT deployable)
+        Vs = [V for t, V in vox_t if t <= T_MAP]
+        if not Vs: continue
+        Vall = np.unique(np.concatenate(Vs), axis=0)
+        if len(Vall) < 100: continue
+        vlo = Vall.min(0) - 2; vhi = Vall.max(0) + 3
+        grid = np.zeros(vhi - vlo, bool); grid[tuple((Vall - vlo).T)] = True
+        def in_occ(P):
+            I = np.floor(P / RES).astype(np.int64) - vlo
+            ok = np.all((I >= 0) & (I < grid.shape), axis=1); out_ = np.zeros(len(P), bool)
+            out_[ok] = grid[tuple(I[ok].T)]
+            return out_
         fr = np.arange(t0, t1 + 1e-6, 0.2)
         if fr[-1] > e[-1, 0]: continue
         poses = [est(t) for t in fr]
@@ -94,17 +103,21 @@ for name in sys.argv[4:]:
             d = X - o; L = np.linalg.norm(d)
             if L < 0.3: return True
             s = np.arange(0.15, L - 0.15, 0.05)
-            P = o + np.outer(s / L, d)
-            return any(tuple(v) in occ for v in np.floor(P / RES).astype(np.int64))
+            return bool(in_occ(o + np.outer(s / L, d)).any())
         # landmarks: estimator's SLAM points + predicted features on mapped surfaces
         pts = [np.array(p) for p in jcs[k][2]]; n_slam = len(pts)
-        for j in range(0, len(fr), 5):
+        for j in range(0, len(fr), 10):
             Re, pe = poses[j]; RC, oc = cam_pose(Re, pe, 0); D = DCg @ RC.T
             s = np.arange(0.3, 8.0, 0.05)
-            for d in D:
-                P = oc + np.outer(s, d); V = np.floor(P / RES).astype(np.int64)
-                hit = next((i for i, v in enumerate(V) if tuple(v) in occ), None)
-                if hit is not None: pts.append(P[hit])
+            P = oc[None, None] + D[:, None, :] * s[None, :, None]           # rays x samples x 3
+            H = in_occ(P.reshape(-1, 3)).reshape(len(D), len(s))
+            for i in np.nonzero(H.any(1))[0]: pts.append(P[i, np.argmax(H[i])])
+        # dedupe predicted points at 0.1 m and cap at 1000 (seeded), keep all estimator landmarks
+        pred_pts = np.array(pts[n_slam:]) if len(pts) > n_slam else np.zeros((0, 3))
+        if len(pred_pts):
+            _, ui = np.unique(np.floor(pred_pts / 0.1).astype(np.int64), axis=0, return_index=True); pred_pts = pred_pts[np.sort(ui)]
+            if len(pred_pts) > 1000: pred_pts = pred_pts[np.random.default_rng(int(t0 * 100)).choice(len(pred_pts), 1000, replace=False)]
+        pts = pts[:n_slam] + list(pred_pts)
         tid = f'{name}_{t0:.2f}'; open(f'{out}/jc/{tid}.cdr', 'wb').write(jcs[k][1])
         ft.write(f'TASK {tid} {out}/jc/{tid}.cdr\n')
         for t, (Re, pe) in zip(fr, poses):
@@ -132,5 +145,5 @@ for name in sys.argv[4:]:
                 lines.append(f'TRKC {c} {X[0]:.5f} {X[1]:.5f} {X[2]:.5f} {q2:.6g} {len(samp)} {" ".join(parts)}')
             if lines: ft.write('\n'.join(lines) + '\n'); ntr += 1
         ft.write('END\n')
-        fm.write(json.dumps({'id': tid, 'flight': name, 't0': t0, 'landmarks': ntr, 'slam_landmarks_t0': n_slam, 'map_voxels': len(occ)}) + '\n')
+        fm.write(json.dumps({'id': tid, 'flight': name, 't0': t0, 'landmarks': ntr, 'slam_landmarks_t0': n_slam, 'map_voxels': int(len(Vall))}) + '\n')
     print(name, 'windows', len(wins))

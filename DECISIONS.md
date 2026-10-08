@@ -336,3 +336,11 @@ Decisions made without the user, each with what / why / alternatives.
   0.3–0.7 per frame, disparity error 0.08 → 0.10 px over 20 frames). Joint model fitted on the 14 training
   replays: rho = 0.97 (0.95–0.98), first-sample disparity spread sd = 0.10 px; exact differenced
   information `information_random_walk_stereo` (brute force 2.4e-14).
+- **Step 2**: refit = validation + texture-level tracks (training only); also tried one pre-specified hinge
+  term (extra slope below min-eigenvalue 5): no change; not adopted. No office-like training layout built.
+- **Step 3 deployable predictor**: features predicted on mapper surfaces (16×9 grid every 2 s, dedup 0.1 m,
+  cap 1000; first attempt 32×18 every 1 s produced ~8500 points per window and was too slow — reduced before
+  any result). Map-at-window-end variant added purely as a reference.
+- **Step 3 result 0.04 < 0.4 → step 5 not run** (user's rule: stop at the first blocker). Step 4 diagnostics
+  were still run (report only).
+- Training replays first launched with ROS domains 301–312 (> 232, invalid, all failed); rerun with 120–131.

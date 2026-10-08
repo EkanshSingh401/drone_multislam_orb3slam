@@ -3255,3 +3255,12 @@ OpenVINS 0.06–0.19 / ≈0. Per-metre metric dominated by 1/path (retired as he
 J_RW (differenced rows) in candidate_scoring.hpp + planner option + tests (7e-16, MC 1.3%). drift_model
 (held-out offices, raw): position RW 0.48 / 0.42 vs white 0.27 / 0.25, OV 0.19 / 0.14, geometry 0.54 / 0.43;
 yaw ≤ 0.18 for all. RW level 48x too high (mono tool).
+
+## 78. Day 9: stereo random walk, units fix, texture-level training, deployable predictor fails
+
+Units: random-walk info needs px->normalized scaling (1/f); day-8 RW results superseded. Stereo joint error
+(ρ 0.97, s_d 0.10 px, training replays). Oracle-geometry ranking (held-out, raw position): stereo RW 0.52 / 0.48,
+white 0.40, OpenVINS 0.19 / 0.14, geometry 0.54 / 0.43; level slope ~1, 2x low. texlevels_a/b training scenes:
+plain-surface under-prediction persists (2.9–3.6x; 4.3x at matched texture). Deployable predictor (SLAM
+landmarks + mapper-surface features): 0.04 (map at window end 0.06) vs geometry 0.55. rw+geometry 0.44 vs 0.39
+(deployable). Yaw drift ~ gyro-bias estimate change (ρ 0.39). Planner test not run (precondition failed).
