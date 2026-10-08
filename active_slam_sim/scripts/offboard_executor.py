@@ -310,7 +310,10 @@ class OffboardExecutor(Node):
             # to release the hold and feed PX4 diverging vision at touchdown.
             self._vio_hold = getattr(self, "_vio_hold", False) or pz < self.home[2] + 0.4
             self.pub_vio_hold.publish(Bool(data=bool(self._vio_hold)))
-            px4_says = ld is not None and (ld.landed or ld.maybe_landed)
+            # day 6: ground_contact counts too (PX4's first land-detector stage; with the baro height
+            # reference it fires ~1 s after touchdown, before OpenVINS diverges; landed/maybe_landed
+            # came too late in d6_office_frontier_2/3 and the sim watchdog had to disarm)
+            px4_says = ld is not None and (ld.landed or ld.maybe_landed or (ld.ground_contact and tp > 2.0))
             ov_says = tp > 2.0 and pz < self.home[2] + 0.12 and abs(vz) < 0.15
             if armed and (px4_says or ov_says):
                 if self.td_since is None:

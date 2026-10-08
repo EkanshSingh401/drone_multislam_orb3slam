@@ -30,10 +30,11 @@ OUT_WORLD = os.path.join(ROOT, "docker/sim/worlds/office.sdf")
 OUT_MODEL = os.path.join(ROOT, "docker/sim/models/office_scene")
 WORLD_NAME = "office"
 SCENE = "office_scene"
-# day 6 feature-poor variant: same geometry; these surfaces get a near-uniform texture, and the
-# south-centre room (x 6..16, y < -1.75) is dim (emissive 0.15 instead of 0.55).
-PLAIN = {"outer_n2", "outer_e2", "corr_n2", "corr_n3", "part1_n0", "part1_n1", "part1_s0", "part1_s1", "ne_shelf", "ne_cab"}
-DIM = {"outer_s1", "part0_s0", "part0_s1", "corr_s1", "corr_s2", "sc_island", "sc_shelf", "floor_10"}
+# day 6 feature-poor variant: same geometry; where frontier actually flies in 180 s (x < 4 m):
+# the west corridor walls and the north-west room are near-uniform grey; the south-west room and the
+# south half of the west floor are dim (emissive 0.15 instead of 0.55).
+PLAIN = {"corr_n0", "corr_n1", "outer_w1", "outer_n0", "outer_w2", "part0_n0", "part0_n1", "nw_desk", "nw_shelf", "nw_cab"}
+DIM = {"outer_s0", "outer_w0", "part0_s0", "part0_s1", "corr_s0", "sw_cab", "sw_shelf", "floor_00"}
 VARIANT = "textured"
 
 

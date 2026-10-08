@@ -12,7 +12,7 @@
         <geometry><plane><normal>0 0 1</normal><size>11.0 11.0</size></plane></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.55 0.55 0.55 1</emissive>
+          <emissive>0.15 0.15 0.15 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/floor_00.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/floor_00.png</emissive_map>
@@ -42,7 +42,7 @@
         <geometry><plane><normal>0 0 1</normal><size>10.0 11.0</size></plane></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.15 0.15 0.15 1</emissive>
+          <emissive>0.55 0.55 0.55 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/floor_10.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/floor_10.png</emissive_map>
@@ -103,7 +103,7 @@
         <geometry><box><size>10.0 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.55 0.55 0.55 1</emissive>
+          <emissive>0.15 0.15 0.15 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/outer_s0.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/outer_s0.png</emissive_map>
@@ -135,7 +135,7 @@
         <geometry><box><size>10.0 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.15 0.15 0.15 1</emissive>
+          <emissive>0.55 0.55 0.55 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/outer_s1.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/outer_s1.png</emissive_map>
@@ -199,7 +199,7 @@
         <geometry><box><size>0.2 8.25 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.55 0.55 0.55 1</emissive>
+          <emissive>0.15 0.15 0.15 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/outer_w0.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/outer_w0.png</emissive_map>
@@ -311,7 +311,7 @@
         <geometry><box><size>3.5 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.55 0.55 0.55 1</emissive>
+          <emissive>0.15 0.15 0.15 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/corr_s0.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/corr_s0.png</emissive_map>
@@ -343,7 +343,7 @@
         <geometry><box><size>7.0 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.15 0.15 0.15 1</emissive>
+          <emissive>0.55 0.55 0.55 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/corr_s1.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/corr_s1.png</emissive_map>
@@ -375,7 +375,7 @@
         <geometry><box><size>7.0 0.2 4.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.15 0.15 0.15 1</emissive>
+          <emissive>0.55 0.55 0.55 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/corr_s2.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/corr_s2.png</emissive_map>
@@ -679,7 +679,7 @@
         <geometry><box><size>2.0 1.2 1.2</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.55 0.55 0.55 1</emissive>
+          <emissive>0.15 0.15 0.15 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/sw_cab.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/sw_cab.png</emissive_map>
@@ -695,7 +695,7 @@
         <geometry><box><size>3.0 1.0 2.8</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.55 0.55 0.55 1</emissive>
+          <emissive>0.15 0.15 0.15 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/sw_shelf.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/sw_shelf.png</emissive_map>
@@ -711,7 +711,7 @@
         <geometry><box><size>2.4 1.2 0.8</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.15 0.15 0.15 1</emissive>
+          <emissive>0.55 0.55 0.55 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/sc_island.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/sc_island.png</emissive_map>
@@ -727,7 +727,7 @@
         <geometry><box><size>2.0 1.0 2.0</size></box></geometry>
         <material>
           <diffuse>1 1 1 1</diffuse>
-          <emissive>0.15 0.15 0.15 1</emissive>
+          <emissive>0.55 0.55 0.55 1</emissive>
           <pbr><metal>
             <albedo_map>model://office_plain_scene/materials/textures/sc_shelf.png</albedo_map>
             <emissive_map>model://office_plain_scene/materials/textures/sc_shelf.png</emissive_map>
