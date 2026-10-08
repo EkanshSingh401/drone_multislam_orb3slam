@@ -1,0 +1,230 @@
+{
+ "n_goals": 79,
+ "flights": 3,
+ "horizon_s_median": 4.5,
+ "horizon_s_iqr": [
+  2.64,
+  9.45
+ ],
+ "realized_median": -0.015,
+ "realized_iqr": [
+  -0.194,
+  0.192
+ ],
+ "gate_plan_real_vs_logged": {
+  "n": 79,
+  "median_abs_diff": 3e-05,
+  "frac_within_0.01": 0.722,
+  "p95_abs_diff": 0.459
+ },
+ "ladder": {
+  "planner (logged dI_pose)": {
+   "n": 79,
+   "pred_median": 1.013,
+   "pred_iqr": [
+    0.108,
+    1.72
+   ],
+   "spearman": 0.385,
+   "spearman_ci": [
+    0.332,
+    0.468
+   ],
+   "pearson": 0.606,
+   "bias_median": 0.742
+  },
+  "plan_real": {
+   "n": 79,
+   "pred_median": -1.242,
+   "pred_iqr": [
+    -3.277,
+    0.526
+   ],
+   "spearman": 0.217,
+   "spearman_ci": [
+    -0.008,
+    0.338
+   ],
+   "pearson": 0.337,
+   "bias_median": -1.315
+  },
+  "act_real": {
+   "n": 79,
+   "pred_median": -1.464,
+   "pred_iqr": [
+    -4.393,
+    0.028
+   ],
+   "spearman": 0.19,
+   "spearman_ci": [
+    -0.068,
+    0.382
+   ],
+   "pearson": 0.303,
+   "bias_median": -1.566
+  },
+  "act_real_win": {
+   "n": 79,
+   "pred_median": -1.765,
+   "pred_iqr": [
+    -4.742,
+    -0.151
+   ],
+   "spearman": 0.176,
+   "spearman_ci": [
+    -0.101,
+    0.322
+   ],
+   "pearson": 0.298,
+   "bias_median": -1.642
+  },
+  "dense_win": {
+   "n": 79,
+   "pred_median": -0.185,
+   "pred_iqr": [
+    -2.788,
+    1.001
+   ],
+   "spearman": 0.225,
+   "spearman_ci": [
+    0.06,
+    0.39
+   ],
+   "pearson": 0.306,
+   "bias_median": -0.352
+  },
+  "oracle": {
+   "n": 79,
+   "pred_median": 2.441,
+   "pred_iqr": [
+    1.723,
+    3.119
+   ],
+   "spearman": 0.588,
+   "spearman_ci": [
+    0.398,
+    0.705
+   ],
+   "pearson": 0.682,
+   "bias_median": 2.375
+  },
+  "oracle_slam": {
+   "n": 79,
+   "pred_median": 2.332,
+   "pred_iqr": [
+    1.638,
+    3.021
+   ],
+   "spearman": 0.6,
+   "spearman_ci": [
+    0.413,
+    0.744
+   ],
+   "pearson": 0.668,
+   "bias_median": 2.327
+  },
+  "oracle_msckf": {
+   "n": 79,
+   "pred_median": 0.17,
+   "pred_iqr": [
+    -0.307,
+    0.962
+   ],
+   "spearman": 0.391,
+   "spearman_ci": [
+    0.121,
+    0.597
+   ],
+   "pearson": 0.517,
+   "bias_median": 0.259
+  }
+ },
+ "split_model": {
+  "oracle_minus_slam_only (marginal MSCKF value)": 0.057,
+  "oracle_minus_msckf_only (marginal SLAM value)": 1.995,
+  "oracle_slam_minus_dense_win (new landmarks)": 1.937,
+  "lost_to_landmarks_leaving (act_real - act_real_win)": 0.104,
+  "lost_iqr": [
+   0.001,
+   0.384
+  ],
+  "path_effect (plan_real - act_real)": 0.781,
+  "density_effect (dense_win - act_real_win)": 1.748
+ },
+ "features_spearman": {
+  "path_len": {
+   "rho": -0.047,
+   "ci": [
+    -0.105,
+    0.179
+   ]
+  },
+  "rotation": {
+   "rho": -0.038,
+   "ci": [
+    -0.063,
+    0.033
+   ]
+  },
+  "lm_vis": {
+   "rho": 0.228,
+   "ci": [
+    0.192,
+    0.268
+   ]
+  },
+  "pred_logged": {
+   "rho": 0.385,
+   "ci": [
+    0.332,
+    0.468
+   ]
+  },
+  "horizon_s": {
+   "rho": -0.069,
+   "ci": [
+    -0.095,
+    0.126
+   ]
+  },
+  "surface_rays": {
+   "rho": 0.086,
+   "ci": [
+    -0.401,
+    0.339
+   ]
+  },
+  "mean_inv_depth": {
+   "rho": 0.265,
+   "ci": [
+    0.177,
+    0.337
+   ]
+  }
+ },
+ "ols": {
+  "n": 79,
+  "std_coef": {
+   "path_len": -2.6412,
+   "rotation": -0.3878,
+   "surface_rays": 0.1461,
+   "lm_vis": -0.6225,
+   "pred_logged": 1.1453,
+   "horizon_s": 2.3152
+  },
+  "r2_in_sample": 0.575,
+  "r2_leave_one_flight_out": 0.456,
+  "r2_lofo_single": {
+   "path_len": 0.003,
+   "rotation": 0.012,
+   "surface_rays": 0.013,
+   "lm_vis": -0.0,
+   "pred_logged": 0.316,
+   "horizon_s": 0.008
+  }
+ },
+ "n_by_pick": {
+  "argmax": 50,
+  "random": 29
+ }
+}

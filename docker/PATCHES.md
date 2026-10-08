@@ -3227,3 +3227,14 @@ no drift -> correlated per-frame vision errors (noise-free renders) at the syste
 (1.06x), multi-step from one snapshot over-counts (2.1x at 1 s, worst under rotation), realized pose
 information is an equilibrium (SLAM 89%, MSCKF 9%, init 1%); FEJ off changes nothing. Ladder over 1506
 goals: Spearman ≤ 0.24 at every rung incl. oracle.
+
+## 75. Day 6: executor yaw rule + arming fix + landing, office_plain, EuRoC consistency, goal spread, drift
+
+Executor: no slow in-place yaw (deadband 0.3 rad, turns at 0.6 rad/s); ARM by elapsed time (wall-timer vs
+sim-time modulo bug made office arming fail); baro height reference + height-offset correction; latched
+landing hold (OpenVINS diverges upward on the ground and released it); PX4 ground_contact / local-height
+disarm. 16/16 armed; final logic 6/6 executor disarms. office_plain world (gen_office_world --variant plain).
+EuRoC (4 seqs x 20/10/5 Hz): GT orientation error 0.3–1.0° >> filter σ 0.05° → consistency not testable;
+rate unchanged. Goal spread: realized Δlogdet tails ±1–2 nats; oracle Spearman 0.59 (plain office) / 0.45
+(office) vs 0.24 (validation); planner 0.39 in plain office. Drift per metre (1784 windows, 132 flights):
+p90/p10 10–21, position drift R² 0.44 from landmarks/returns/rotation/speed; σ growth vs drift ρ 0.11.

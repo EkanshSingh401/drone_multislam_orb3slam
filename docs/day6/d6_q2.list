@@ -1,0 +1,7 @@
+d6_plain_frontier_2 frontier office_plain GEOFENCE=40.0 EXECUTOR=/out/cl/day6/offboard_executor.py
+d6_tex_pc_1 pose_cov office GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=1 EXECUTOR=/out/cl/day6/offboard_executor.py
+d6_plain_pc_1 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=1 EXECUTOR=/out/cl/day6/offboard_executor.py
+d6_tex_pc_2 pose_cov office GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=2 EXECUTOR=/out/cl/day6/offboard_executor.py
+d6_plain_pc_2 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=2 EXECUTOR=/out/cl/day6/offboard_executor.py
+d6_tex_pc_3 pose_cov office GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=3 EXECUTOR=/out/cl/day6/offboard_executor.py
+d6_plain_pc_3 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=3 EXECUTOR=/out/cl/day6/offboard_executor.py

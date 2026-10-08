@@ -256,3 +256,19 @@ Decisions made without the user, each with what / why / alternatives.
 - **Step 3 feature-poor variant `office_plain`**: same geometry; NE room walls, the x = 16 partitions,
   two north corridor segments and NE furniture near-uniform grey (±1 grey level); the south-centre
   room dim (emissive 0.15 vs 0.55).
+- **Landing logic refined between batches** (each flight's version recorded in the report's table):
+  baro without offset (invalid, 3) → + height offset → + latched hold → + PX4 ground_contact → + PX4
+  local height within 0.15 m of takeoff and |vz| < 0.15 for 0.5 s. Later versions were deployed through
+  the executor override file between flights (never during one).
+- **EuRoC**: OpenVINS EuRoC config + our tracking/feature/update keys; calibration options stay EuRoC's
+  (online calibration is dataset-appropriate for real data). track_frequency 21/10.5/5.25 to get exactly
+  every 1st/2nd/4th frame at 20 Hz. NEES with a constant GT-body-to-IMU rotation removed (fitted after
+  the world-yaw alignment). joint_cov_dump stamps have 12 significant digits (10 ms at epoch time):
+  matched to estimates within 6 ms.
+- **EuRoC verdict inconclusive → system rate unchanged, no sim-only workaround, render investigation not
+  started**: the user's rule had two branches (real consistent → sim artifact; real same dependence →
+  real); EuRoC's GT orientation error (0.3–1.0°) exceeds the filter σ (0.04–0.06°) 6–25x, so neither
+  can be established. Adopting a sim-only workaround needs evidence it is sim-only.
+- **Step 3 plain variant moved** before any plain-office flight (frontier never reaches x > 4 m).
+- **Step 4 window**: 20 s, step 10 s, ≥ 1 m path; drift as relative pose error (no alignment); GT
+  interpolated at OpenVINS state times.

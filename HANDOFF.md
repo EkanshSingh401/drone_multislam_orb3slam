@@ -399,6 +399,13 @@ Later / noted, not started:
   (`day5/run_ovsim.sh`, `make_traj.py`, `sim_nees.py`).
   **Pass doubles as `40.0`, never `40`** in env/params (int -> InvalidParameterTypeException).
   **Do not pause run_batch by killing it mid-bringup** (orphaned imu_restamp -> duplicate /camera/imu).
+- **Day 6 (REPORT_2026-10-09.md, DECISIONS "Day 6", PATCHES §75):** executor defaults: no slow in-place yaw
+  (`turn_deadband` 0.3 rad, full-rate turns), ARM by elapsed time (old tick test never sent ARM at RTF ~1),
+  baro height reference (`PX4_HGT_REF`, default 0) with executor height-offset correction, latched landing
+  hold, PX4 ground-contact / local-height disarm. Final executor logic currently only in
+  `/out/cl/day6/offboard_executor.py` + repo; **rebuild the image** before relying on the image copy.
+  `office_plain` world (feature-poor). EuRoC on disk (`/out/euroc`, fetch via DSpace API; rate-limited).
+  Step-4 drift tool `day6/drift_windows.py`.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

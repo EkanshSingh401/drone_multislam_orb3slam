@@ -1,0 +1,12 @@
+V1_01_easy tf5.25 frames 724 joint_cov_dump: 556 messages -> /out/euroc/run/V1_01_easy_tf5.25/jc_imu.txt
+V2_02_medium tf5.25 frames 583 joint_cov_dump: 451 messages -> /out/euroc/run/V2_02_medium_tf5.25/jc_imu.txt
+V2_02_medium tf10.5 frames 1170 joint_cov_dump: 453 messages -> /out/euroc/run/V2_02_medium_tf10.5/jc_imu.txt
+V1_01_easy tf10.5 frames 1452 joint_cov_dump: 559 messages -> /out/euroc/run/V1_01_easy_tf10.5/jc_imu.txt
+V2_02_medium tf21 frames 2344 joint_cov_dump: 455 messages -> /out/euroc/run/V2_02_medium_tf21/jc_imu.txt
+V1_01_easy tf21 frames 2908 joint_cov_dump: 561 messages -> /out/euroc/run/V1_01_easy_tf21/jc_imu.txt
+MH_01_easy tf5.25 frames 917 joint_cov_dump: 554 messages -> /out/euroc/run/MH_01_easy_tf5.25/jc_imu.txt
+MH_01_easy tf10.5 frames 1837 joint_cov_dump: 556 messages -> /out/euroc/run/MH_01_easy_tf10.5/jc_imu.txt
+MH_01_easy tf21 frames 3678 joint_cov_dump: 558 messages -> /out/euroc/run/MH_01_easy_tf21/jc_imu.txt
+MH_03_medium tf5.25 frames 671 joint_cov_dump: 459 messages -> /out/euroc/run/MH_03_medium_tf5.25/jc_imu.txt
+MH_03_medium tf10.5 frames 1346 joint_cov_dump: 462 messages -> /out/euroc/run/MH_03_medium_tf10.5/jc_imu.txt
+MH_03_medium tf21 frames 2696 joint_cov_dump: 463 messages -> /out/euroc/run/MH_03_medium_tf21/jc_imu.txt

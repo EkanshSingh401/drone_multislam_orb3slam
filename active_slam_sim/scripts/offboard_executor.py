@@ -78,6 +78,7 @@ class OffboardExecutor(Node):
         # varying offset; setpoints are in the OpenVINS frame, so the height setpoint is shifted by
         # z_off = PX4 height - OpenVINS height (EMA, ~2 s; frozen near the ground and while landing).
         self.z_off = 0.0
+        self.lpos = None; self.lpos_home_z = None; self._px4_low_since = None
         for s_ in ("_v1", ""):
             self.create_subscription(VehicleLocalPosition, f"{pre}/fmu/out/vehicle_local_position{s_}", self._on_lpos, q)
         for s_ in ("_v1", ""):
@@ -106,6 +107,7 @@ class OffboardExecutor(Node):
     def _on_land(self, m): self.land_det = m
 
     def _on_lpos(self, m):
+        self.lpos = m
         if self.odom is None or not m.z_valid or self.phase in ("land", "done", "wait_for_fmu"):
             return
         oz = self.odom.pose.pose.position.z - P_BASE_IMU[2]
@@ -234,6 +236,8 @@ class OffboardExecutor(Node):
                 self.get_logger().info("sending ARM")
                 self.cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
             if armed:
+                if self.lpos is not None and self.lpos.z_valid:
+                    self.lpos_home_z = -self.lpos.z      # PX4 height at takeoff (for the landing check)
                 self.go("climb")
             elif tp > 20:
                 self.get_logger().error("failed to arm")
@@ -314,6 +318,15 @@ class OffboardExecutor(Node):
             # reference it fires ~1 s after touchdown, before OpenVINS diverges; landed/maybe_landed
             # came too late in d6_office_frontier_2/3 and the sim watchdog had to disarm)
             px4_says = ld is not None and (ld.landed or ld.maybe_landed or (ld.ground_contact and tp > 2.0))
+            # day 6: PX4's own height (baro reference, valid through touchdown) within 0.15 m of the
+            # takeoff height and |vz| < 0.15 m/s for 0.5 s -> on the ground (PX4 state, not OpenVINS).
+            lp = self.lpos
+            if lp is not None and self.lpos_home_z is not None and lp.z_valid and tp > 2.0 \
+                    and (-lp.z) - self.lpos_home_z < 0.15 and abs(lp.vz) < 0.15:
+                self._px4_low_since = self._px4_low_since or t
+                px4_says = px4_says or (t - self._px4_low_since > 0.5)
+            else:
+                self._px4_low_since = None
             ov_says = tp > 2.0 and pz < self.home[2] + 0.12 and abs(vz) < 0.15
             if armed and (px4_says or ov_says):
                 if self.td_since is None:

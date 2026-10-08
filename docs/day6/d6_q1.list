@@ -1,0 +1,14 @@
+# day 6 step 1: executor defaults (yaw rule, arm by time, baro height ref + offset, latched landing hold)
+d6_office_frontier_1 frontier office GEOFENCE=40.0
+d6_office_frontier_2 frontier office GEOFENCE=40.0
+d6_office_frontier_3 frontier office GEOFENCE=40.0
+# day 6 step 3: feature-poor office, frontier completes?
+d6_plain_frontier_1 frontier office_plain GEOFENCE=40.0
+d6_plain_frontier_2 frontier office_plain GEOFENCE=40.0
+# day 6 step 3: spread of realized dlogdet across goals (argmax + 30% random picks), textured vs plain office
+d6_tex_pc_1 pose_cov office GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=1
+d6_plain_pc_1 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=1
+d6_tex_pc_2 pose_cov office GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=2
+d6_plain_pc_2 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=2
+d6_tex_pc_3 pose_cov office GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=3
+d6_plain_pc_3 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.01 PATH_SPACING=0.5 RANDOM_PICK=0.3 RANDOM_SEED=3
