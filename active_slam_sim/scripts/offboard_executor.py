@@ -111,7 +111,10 @@ class OffboardExecutor(Node):
         if self.odom is None or not m.z_valid or self.phase in ("land", "done", "wait_for_fmu"):
             return
         oz = self.odom.pose.pose.position.z - P_BASE_IMU[2]
-        if oz < 0.4:
+        pz = -m.z - (self.lpos_home_z or 0.0)            # PX4 height above its takeoff height
+        # day 8: learn as soon as EITHER height says airborne (> 0.4 m). Keyed on OpenVINS alone, a
+        # ~1 m baro offset at takeoff kept OpenVINS below 0.4 m while PX4 held 1.5 m (d7_sens_tex_fr_2).
+        if oz < 0.4 and pz < 0.4:
             return
         self.z_off += 0.01 * ((-m.z) - oz - self.z_off)
 

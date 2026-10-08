@@ -165,6 +165,31 @@ inline Eigen::MatrixXd information(const std::vector<asi::PredictedMeasurement>&
   return J;
 }
 
+// Day 8 (MATH_TO_CODE.md "Random-walk tracking error"): information of ONE feature track whose
+// measurement errors are a per-track random walk, e_0 ~ N(0, s0^2 I), e_k = e_(k-1) + d_k,
+// d_k ~ N(0, q2 * frames_k I) (frames_k = camera frames between samples k-1 and k).
+// Differencing (z_0, z_1 - z_0, ...) is invertible and whitens the noise exactly, so
+//   J = H_0^T H_0 / s0^2 + sum_k (H_k - H_(k-1))^T (H_k - H_(k-1)) / (q2 frames_k).
+// `track` holds the samples in time order (each a PredictedMeasurement, blocks at state columns,
+// pm.sigma ignored). With the white model the same track gives sum_k H_k^T H_k / sigma^2.
+inline Eigen::MatrixXd information_random_walk(const std::vector<asi::PredictedMeasurement>& track, int n, double s0,
+                                               double q2, const std::vector<double>& frames) {
+  Eigen::MatrixXd J = Eigen::MatrixXd::Zero(n, n);
+  for (size_t k = 0; k < track.size(); ++k) {
+    std::vector<asi::JacobianBlock> blocks = track[k].blocks;
+    double var = s0 * s0;
+    if (k > 0) {
+      for (auto b : track[k - 1].blocks) { b.J = -b.J; blocks.push_back(b); }
+      var = q2 * std::max(1.0, k < frames.size() ? frames[k] : 1.0);
+    }
+    const double w = 1.0 / var;
+    for (const auto& bi : blocks)
+      for (const auto& bj : blocks)
+        J.block(bi.col, bj.col, bi.J.cols(), bj.J.cols()).noalias() += w * bi.J.transpose() * bj.J;
+  }
+  return J;
+}
+
 struct PoseGainSplit {
   double logdet_now = NAN;    // log det Sigma_pose(now)
   double logdet_prior = NAN;  // log det Sigma_pose at the end, propagated, no measurements

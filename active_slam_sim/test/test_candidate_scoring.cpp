@@ -147,6 +147,50 @@ int main() {
     std::printf("classifier: %d/%d agree (visible %d, fov %d, range %d)\n", agree, n, nvis, cnt[1], cnt[2]);
     CHECK(agree == n && cnt[2] > 0 && nvis > 100, "classifier disagrees with predict_measurement");
   }
+  // --- day 8: random-walk track information vs brute force (H^T Sigma_e^-1 H) and Monte Carlo ---
+  {
+    const int n = 12, K = 7;          // state dim, samples in the track
+    const double s0 = 0.3, q2 = 0.02; const std::vector<double> fr{1, 2, 1, 3, 1, 2, 2};
+    std::vector<asi::PredictedMeasurement> track;
+    MatrixXd H = MatrixXd::Zero(2 * K, n);
+    for (int k = 0; k < K; ++k) {
+      asi::PredictedMeasurement pm;
+      MatrixXd Jc = randn(2, 6), Jl = randn(2, 3);  // clone k at cols 3..8 (shared), landmark at 9..11, plus a k-specific col
+      pm.blocks.push_back({3, Jc}); pm.blocks.push_back({9, Jl});
+      MatrixXd Jk = randn(2, 1); pm.blocks.push_back({k % 3, Jk});
+      track.push_back(pm);
+      H.block(2 * k, 3, 2, 6) += Jc; H.block(2 * k, 9, 2, 3) += Jl; H.block(2 * k, k % 3, 2, 1) += Jk;
+    }
+    // brute force: per axis Sigma_ij = s0^2 + q2 * cumframes(min(i,j)), axes independent
+    std::vector<double> cum(K, 0.0); for (int k = 1; k < K; ++k) cum[k] = cum[k - 1] + fr[k];
+    MatrixXd Se = MatrixXd::Zero(2 * K, 2 * K);
+    for (int i = 0; i < K; ++i) for (int j = 0; j < K; ++j) for (int a = 0; a < 2; ++a)
+      Se(2 * i + a, 2 * j + a) = s0 * s0 + q2 * cum[std::min(i, j)];
+    const MatrixXd Jbf = H.transpose() * Se.ldlt().solve(H);
+    const MatrixXd Jrw = information_random_walk(track, n, s0, q2, fr);
+    const double rel = (Jbf - Jrw).norm() / Jbf.norm();
+    std::printf("random walk info vs brute force: rel err %.2e\n", rel);
+    CHECK(rel < 1e-10, "random-walk information differs from brute force (%g)", rel);
+    // white-model limit: q2 -> large makes later samples uninformative except the first
+    const MatrixXd Jbig = information_random_walk(track, n, s0, 1e12, fr);
+    const MatrixXd J0 = H.topRows(2).transpose() * H.topRows(2) / (s0 * s0);
+    CHECK((Jbig - J0).norm() / J0.norm() < 1e-6, "q2 -> inf should leave only the first sample");
+    // Monte Carlo: GLS estimate of x from z = H x + e (e random walk) has covariance J^-1 (on an
+    // identifiable subproblem: prior I on x)
+    const MatrixXd P = (Jrw + MatrixXd::Identity(n, n)).inverse();
+    const MatrixXd G = P * H.transpose() * Se.ldlt().solve(MatrixXd::Identity(2 * K, 2 * K));
+    MatrixXd C = MatrixXd::Zero(n, n); const int M = 20000;
+    for (int m = 0; m < M; ++m) {
+      Eigen::VectorXd x = randn(n, 1), e(2 * K);
+      double eu = nrm() * s0, ev = nrm() * s0;
+      for (int k = 0; k < K; ++k) { if (k) { eu += nrm() * std::sqrt(q2 * fr[k]); ev += nrm() * std::sqrt(q2 * fr[k]); } e(2 * k) = eu; e(2 * k + 1) = ev; }
+      const Eigen::VectorXd xh = G * (H * x + e);          // posterior mean with prior N(0, I)
+      const Eigen::VectorXd err = xh - x; C += err * err.transpose() / M;
+    }
+    const double mc = (C - P).norm() / P.norm();
+    std::printf("random walk Monte Carlo: |C - P| / |P| = %.3f (M = %d)\n", mc, M);
+    CHECK(mc < 0.05, "Monte Carlo covariance disagrees with (J + I)^-1 (%g)", mc);
+  }
   std::printf("%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;
 }

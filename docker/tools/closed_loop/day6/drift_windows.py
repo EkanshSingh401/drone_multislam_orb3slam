@@ -106,7 +106,10 @@ def flight(d, fo):
         sy0 = float(np.sqrt(np.sum((gI0 * sd[j0, 1:4]) ** 2))); sy1 = float(np.sqrt(np.sum((gI1 * sd[j1, 1:4]) ** 2)))
         rec = {'flight': name, 'world': world, 't0': round(float(t0), 2), 'path_m': round(path, 3), 'speed': round(path / W, 3),
                'rot_rad': round(rot, 3), 'rate': round(rot / W, 4), 'drift_pos_m': round(float(np.linalg.norm(te)), 4), 'drift_yaw_deg': round(float(yaw_err), 4),
-               'dsig_pos_m': round(float(sp1 - sp0), 5), 'dsig_yaw_deg': round(float(np.degrees(sy1 - sy0)), 5)}
+               'dsig_pos_m': round(float(sp1 - sp0), 5), 'dsig_yaw_deg': round(float(np.degrees(sy1 - sy0)), 5),
+               # day 8 (ceiling check): the filter's sigmas at both window ends (per axis, m / rad)
+               'sig_p0': [round(float(x), 6) for x in sd[j0, 4:7]], 'sig_p1': [round(float(x), 6) for x in sd[j1, 4:7]],
+               'sig_y0': round(sy0, 7), 'sig_y1': round(sy1, 7)}
         if path >= 1.0:
             rec.update({'drift_pos_per_m': rec['drift_pos_m'] / path, 'drift_yaw_per_m': rec['drift_yaw_deg'] / path,
                         'dsig_pos_per_m': rec['dsig_pos_m'] / path, 'dsig_yaw_per_m': rec['dsig_yaw_deg'] / path})

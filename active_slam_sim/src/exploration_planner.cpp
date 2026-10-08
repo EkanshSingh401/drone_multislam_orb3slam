@@ -14,6 +14,7 @@
 // straight path to it must keep ESDF distance >= r_path. Flight is at constant
 // height (the ESDF slice height), like the nvblox slice planner on the Jetson.
 
+#include <array>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -105,6 +106,14 @@ class ExplorationPlanner : public rclcpp::Node {
     // > 0 = pose_cov gain integrated over waypoints this far apart along the executor's path.
     yaw_samples_ = declare_parameter("yaw_samples", 1);
     path_spacing_ = declare_parameter("path_spacing", 0.0);
+    // day 8: measurement model of real landmarks in the path score. "white" (default, old behaviour):
+    // independent sigma_px per sample. "random_walk": per-track random-walk KLT error (MATH_TO_CODE.md
+    // "Random-walk tracking error"): first sample rw_sigma0 px, then rw_q2 px^2 per camera frame at
+    // rw_frame_rate frames/s (the tracking rate).
+    meas_model_ = declare_parameter("meas_model", std::string("white"));
+    rw_sigma0_ = declare_parameter("rw_sigma0", 0.3);
+    rw_q2_ = declare_parameter("rw_q2", 0.02);
+    rw_frame_rate_ = declare_parameter("rw_frame_rate", 15.0);
     yaw_rate_ = declare_parameter("yaw_rate", 0.6);  // the executor's yaw rate limit
     threads_ = declare_parameter("score_threads", 8);
     // Day 4 optimizer's-curse check (diagnostic only): with this probability fly a uniformly
@@ -423,11 +432,17 @@ class ExplorationPlanner : public rclcpp::Node {
       for (int k = 0; k < (int)virt.size(); ++k) virt[k].rep = {{PLACE / 2 + 3 * k, Eigen::Matrix3d::Identity()}};
       // geometry pass, original columns; the R_delta map uses the propagated attitude (= now)
       std::vector<asi::PredictedMeasurement> m_real, m_virt;
+      std::vector<std::array<int, 3>> key_real;  // (landmark index, camera index, waypoint) per m_real entry
       for (size_t k = 0; k < W.size(); ++k)
-        for (const auto& cam : P.cameras) {
+        for (size_t ci = 0; ci < P.cameras.size(); ++ci) {
+          const auto& cam = P.cameras[ci];
           asi::PredictedMeasurement pm;
-          for (const auto& lm : P.landmarks)
-            if (asi::predict_measurement(P.current, W[k].pose, PLACE + 6 * (int)k, cam, lm, noise, nullptr, &pm)) m_real.push_back(pm);
+          for (size_t li = 0; li < P.landmarks.size(); ++li) {
+            const auto& lm = P.landmarks[li];
+            if (asi::predict_measurement(P.current, W[k].pose, PLACE + 6 * (int)k, cam, lm, noise, nullptr, &pm)) {
+              m_real.push_back(pm); key_real.push_back({(int)li, (int)ci, (int)k});
+            }
+          }
           for (const auto& lm : virt)
             if (asi::predict_measurement(P.current, W[k].pose, PLACE + 6 * (int)k, cam, lm, noise, nullptr, &pm)) m_virt.push_back(pm);
         }
@@ -459,7 +474,27 @@ class ExplorationPlanner : public rclcpp::Node {
       const int n = (int)PP.S.rows();
       MatrixXd Tp = MatrixXd::Zero(6, n);
       Tp.block(0, PP.clone_cols.back(), 6, 6).setIdentity();
-      const MatrixXd Jr = active_slam_sim::information(m_real, n);
+      MatrixXd Jr;
+      if (meas_model_ == "random_walk") {
+        // group into tracks: same landmark and camera at consecutive waypoints
+        std::map<std::pair<int, int>, std::vector<size_t>> by;
+        for (size_t i = 0; i < m_real.size(); ++i) by[{key_real[i][0], key_real[i][1]}].push_back(i);
+        Jr = MatrixXd::Zero(n, n);
+        for (auto& kv : by) {
+          std::vector<asi::PredictedMeasurement> tr; std::vector<double> fr;
+          int prev_k = -2;
+          auto flush = [&]() { if (!tr.empty()) Jr += active_slam_sim::information_random_walk(tr, n, rw_sigma0_, rw_q2_, fr); tr.clear(); fr.clear(); };
+          for (size_t i : kv.second) {
+            const int k = key_real[i][2];
+            if (k != prev_k + 1) flush();
+            fr.push_back(tr.empty() ? 1.0 : (W[k].t - W[prev_k].t) * rw_frame_rate_);
+            tr.push_back(m_real[i]); prev_k = k;
+          }
+          flush();
+        }
+      } else {
+        Jr = active_slam_sim::information(m_real, n);
+      }
       const MatrixXd J = Jr + active_slam_sim::information(m_virt, n);
       const auto g = active_slam_sim::pose_gain_split(ld_now, PP.S, Tp, J);
       if (g.ok) {
@@ -586,6 +621,8 @@ class ExplorationPlanner : public rclcpp::Node {
   bool have_goal_ = false, done_ = false;
   int empty_replans_ = 0, max_attempts_ = 2;
   double lambda_ = 0.1, margin_time_ = 1.0, path_spacing_ = 0.0, yaw_rate_ = 0.6;
+  std::string meas_model_ = "white";
+  double rw_sigma0_ = 0.3, rw_q2_ = 0.02, rw_frame_rate_ = 15.0;
   int yaw_samples_ = 1, threads_ = 8;
   double random_pick_ = 0.0;
   std::mt19937 rng_;
