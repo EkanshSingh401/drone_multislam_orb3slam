@@ -13,6 +13,9 @@
 //      planners and setpoints use.
 // Map: OctoMap OcTree (liboctomap), resolution `resolution`; depth subsampled by
 // `pixel_step`, rays beyond `max_range` inserted as free space up to max_range.
+// No-return pixels (NaN/inf/<=0.05 m) are SKIPPED (unknown), as nvblox ignores invalid
+// depth (day 5); `no_return_as_free: true` restores the old free-ray-to-max_range insertion
+// that inflated coverage 1.8-3.7x (day 4).
 
 #include <cmath>
 #include <deque>
@@ -55,6 +58,7 @@ class OctomapMapper : public rclcpp::Node {
     slice_half_ = declare_parameter("slice_half_extent", 8.0);
     rate_ = declare_parameter("map_rate", 5.0);
     body_free_radius_ = declare_parameter("body_free_radius", 0.5);
+    no_return_free_ = declare_parameter("no_return_as_free", false);
     band_below_ = declare_parameter("esdf_band_below", 1.0);
     band_above_ = declare_parameter("esdf_band_above", 0.6);
     const auto esdf_topic = declare_parameter("esdf_topic", std::string("/nvblox_node/static_esdf_pointcloud"));
@@ -117,7 +121,10 @@ class OctomapMapper : public rclcpp::Node {
     for (uint32_t v = 0; v < m->height; v += step_) {
       for (uint32_t u = 0; u < m->width; u += step_) {
         float z = d[v * m->width + u];
-        if (!std::isfinite(z) || z <= 0.05f) z = (float)max_range_ + 1.0f;  // no return: free ray
+        if (!std::isfinite(z) || z <= 0.05f) {  // no return
+          if (!no_return_free_) continue;        // unknown (nvblox behaviour, day 5)
+          z = (float)max_range_ + 1.0f;          // old: free ray to max_range
+        }
         const double zz = std::min<double>(z, max_range_ + 1.0);
         const Vector3d pc((u - cx_) * zz / fx_, (v - cy_) * zz / fy_, zz);
         const Vector3d pg = R_GC * pc + p_GC;
@@ -282,6 +289,7 @@ class OctomapMapper : public rclcpp::Node {
 
   double band_below_ = 1.0, band_above_ = 0.6;
   double body_free_radius_ = 0.5, coarse_res_ = 0.25, coarse_radius_ = 10.0;
+  bool no_return_free_ = false;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_coarse_;
   rclcpp::TimerBase::SharedPtr timer_coarse_;
   double res_, max_range_, fx_, fy_, cx_, cy_, slice_z_, band_, slice_half_, rate_;

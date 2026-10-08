@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cl_flight.sh <frontier|ig> <outdir> : one closed-loop exploration flight (PATCHES s64; overnight stages)
-# env: WORLD (validation|forest, default validation), MAX_MISSION (s, default 180),
+# env: EXECUTOR_ARGS (extra "-p k:=v" for the executor, day 5), WORLD (validation|forest, default validation), MAX_MISSION (s, default 180),
 #      RECORD_SENSORS=1 (day 4: also record stereo IR, IMU, depth for offline replay), LAMBDA, YAW_SAMPLES, PATH_SPACING (day 3 candidate set), PLANNER_ARGS (extra "-p k:=v" for the planner, e.g. sigma_virtual),
 #      FAULT_MODE (none|dropout|drift|jump), FAULT_T (s after airborne), FAULT_DUR, FAULT_DRIFT, FAULT_JUMP
 set -o pipefail
@@ -34,7 +34,7 @@ sleep 8
 /root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/exploration_planner --ros-args -p use_sim_time:=true -p planner_type:=$TYPE -p flight_height:=1.5 ${SIGMA_L:+-p sigma_virtual:=$SIGMA_L} ${LAMBDA:+-p lambda:=$LAMBDA} ${YAW_SAMPLES:+-p yaw_samples:=$YAW_SAMPLES} ${PATH_SPACING:+-p path_spacing:=$PATH_SPACING} ${RANDOM_PICK:+-p random_pick:=$RANDOM_PICK -p random_seed:=${RANDOM_SEED:-1}} ${PLANNER_ARGS:-} > $OD/planner.log 2>&1 &
 python3 /out/cl/gt_watchdog.py ${WORLD:-validation} > $OD/watchdog.log 2>&1 &
 sleep 2
-timeout 900 python3 ${EXECUTOR:-/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/offboard_executor.py} --ros-args -p flight_height:=1.5 -p max_mission_s:=${MAX_MISSION:-180.0} > $OD/executor.log 2>&1
+timeout 900 python3 ${EXECUTOR:-/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/offboard_executor.py} --ros-args -p flight_height:=1.5 -p max_mission_s:=${MAX_MISSION:-180.0} ${EXECUTOR_ARGS:-} > $OD/executor.log 2>&1
 echo "executor rc=$?"
 sleep 3
 pkill -TERM -f "record -s mcap -o $OD/[f]light.bag"; sleep 3

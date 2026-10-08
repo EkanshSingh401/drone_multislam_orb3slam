@@ -145,3 +145,22 @@ Decisions made without the user, each with what / why / alternatives.
   `d4_abl_{none,yaw}_r{1,2,3}` with `0.0`. Configuration error, not a flight failure.
 - **Step 4 realized gain = log det change of OpenVINS's own IMU pose covariance** decision -> arrival
   (agreement with the filter's belief, as in §61); goals not reached before the next decision skipped.
+
+## Day 5 (2026-10-08 night; user's answers to the day-4 decisions)
+- **Step 1, executor guard timeout = land in place** (not replan). `guard_timeout_s` (default 10 s): a
+  continuous ESDF-guard hold in the home phase longer than this commands NAV_LAND where the vehicle
+  is; the 120 s home timeout now also applies while the guard holds (before, it sat in the branch the
+  guard short-circuited, which is why day-3 holds lasted 314–460 s). Why land, not replan: the home
+  path is the flown breadcrumb trail (known free), so a guard trip there means the map near the trail
+  changed or the vehicle drifted; there is no planner in the home phase to ask, and landing in place
+  is the bounded, simple failsafe. Alt: skip the blocked crumb / step away along the ESDF gradient.
+- **Check flights**: `d5_guard_forced` INVALID (`MAX_MISSION=40` reached ROS as an integer, executor
+  threw at startup — same trap as day 4; renamed `_INVALID_intparam`). `d5_guard_forced2`
+  (hold_distance 1.5 m): guard tripped twice in home but drift released it each time (timer resets;
+  120 s home timeout is the backstop for oscillation). `d5_guard_forced3` (hold_distance 3.5 m, so
+  the hold is continuous in home): held 10.0 s, landed in place, PX4 detector disarmed. These are
+  diagnostic flights with a deliberately wrong hold distance; not evaluations.
+- **Harness**: `cl_flight.sh` gained `EXECUTOR_ARGS` (extra executor parameters).
+- **Step 2, mapper**: no-return depth pixels are SKIPPED (unknown), param `no_return_as_free`
+  (default false; true = old behaviour). Valid returns beyond max_range (8 m) are still free up to
+  8 m (octomap max-range truncation, as nvblox's max integration distance).

@@ -53,6 +53,9 @@ class OffboardExecutor(Node):
         self.max_mission = float(self.declare_parameter("max_mission_s", 180.0).value)
         self.hold_dist = float(self.declare_parameter("hold_distance", 0.45).value)
         self.geofence = float(self.declare_parameter("geofence_radius", 8.0).value)
+        # day 5: a continuous ESDF-guard hold in the home phase longer than this lands in place
+        # (day 3: holds lasted 314-460 s, until the 900 s executor timeout)
+        self.guard_timeout = float(self.declare_parameter("guard_timeout_s", 10.0).value)
         pre = f"/{self.ns}"
         q = px4_qos()
         self.pub_mode = self.create_publisher(OffboardControlMode, f"{pre}/fmu/in/offboard_control_mode", q)
@@ -160,6 +163,7 @@ class OffboardExecutor(Node):
             self.sp = (px, py, self.height, self.sp[3])
             if not getattr(self, "_held", False):
                 self.get_logger().warning(f"ESDF guard: {dist:.2f} m < {self.hold_dist} m, holding")
+                self._held_since = self.now()
             self._held = True
             return True
         self._held = False
@@ -220,7 +224,13 @@ class OffboardExecutor(Node):
             if not self.crumbs or math.hypot(px - self.crumbs[-1][0], py - self.crumbs[-1][1]) > 0.1:
                 self.crumbs.append((px, py))
         elif self.phase == "home" and self.esdf_guard():
-            pass  # holding: too close to an obstacle
+            # holding: too close to an obstacle. Bounded: land in place after guard_timeout_s,
+            # and the home timeout below applies while holding too.
+            held = t - self._held_since
+            if held > self.guard_timeout or tp > 120:
+                self.get_logger().warning(f"ESDF guard held {held:.1f} s in home (phase {tp:.0f} s); landing here")
+                self.cmd(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+                self.go("land")
         elif self.phase == "home":
             # Retrace the flown path (known free space): breadcrumbs by position only,
             # yaw held; then align yaw at the takeoff point and land.
