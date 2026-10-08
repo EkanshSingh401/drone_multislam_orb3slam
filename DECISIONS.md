@@ -297,3 +297,21 @@ Decisions made without the user, each with what / why / alternatives.
   15 Hz (0.69); rule "same pattern in both → real". Runs with < 1000 residual pairs (failed runs) excluded.
 - **Step 5 branch = stop**: Spearman(σ growth, drift) at the consistent rate (5 Hz, NEES rp 3.2) is 0.03
   for position and 0.47 [0.23, 0.60] for yaw; bar ≥ 0.5 not met → nothing built, no rate change.
+
+## Day 8 (2026-10-11; user direction: keep the information framework, replace the white-noise model)
+- **Step 0**: height-offset learning starts when either PX4 (above its takeoff height) or OpenVINS (base) is
+  above 0.4 m. Check flight d8_check_zoff: normal climb (offset 0.14 m learned during the climb), explore,
+  executor disarm.
+- **Step 1 ceiling**: per window σ_rel² = max(σ(t1)² − σ(t0)², 0) from the filter's marginal sigmas (the
+  t0–t1 cross-covariance is not logged: random-walk approximation); 500 simulated draws per dataset.
+- **Step 2 training data**: validation-scene sim flights only (7 sensor flights × 15 and 5 Hz replays).
+  **EuRoC not used for fitting**: pixel truth needs camera poses to ~0.05°, EuRoC's GT orientation error is
+  0.3–1° (day 6), i.e. 2–8 px — larger than the KLT error to be modelled. EuRoC remains the real-data
+  evidence that the time correlation exists (day 7). Office and plain office fully held out.
+- **Step 3**: random-walk information implemented as a planner option (`meas_model`, default `white`).
+  The first predicted sample of an already-tracked landmark is treated as a fresh track start
+  (approximation, documented in MATH_TO_CODE.md of active_slam_information, new pin e12c376).
+- **Step 4 predictor** (`drift_model`, new tool): planner's linear model, IMU prior from the flight's JC at
+  t0, static propagation, clones at 5 Hz, every tracked feature (TRK) as white 1 px or random-walk track
+  (q² from the fitted model), landmark points from the GT ray cast (oracle geometry, moved into the
+  estimate's frame) — so the comparison isolates the measurement model, not landmark estimation.
