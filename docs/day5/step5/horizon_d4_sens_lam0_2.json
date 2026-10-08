@@ -1,0 +1,50 @@
+[
+{
+"horizon_s": 0.5,
+"n": 267,
+"prop_model": 0.321,
+"prop_real": 0.34,
+"meas_model": 0.456,
+"meas_real": 0.344,
+"net_model": 0.138,
+"net_real": 0.003,
+"spearman_net": 0.224,
+"spearman_meas": 0.139
+},
+{
+"horizon_s": 1.0,
+"n": 267,
+"prop_model": 0.64,
+"prop_real": 0.73,
+"meas_model": 1.39,
+"meas_real": 0.736,
+"net_model": 0.805,
+"net_real": 0.006,
+"spearman_net": 0.203,
+"spearman_meas": 0.093
+},
+{
+"horizon_s": 2.0,
+"n": 267,
+"prop_model": 1.179,
+"prop_real": 1.466,
+"meas_model": 3.372,
+"meas_real": 1.463,
+"net_model": 2.209,
+"net_real": 0.007,
+"spearman_net": 0.213,
+"spearman_meas": 0.133
+},
+{
+"horizon_s": 5.0,
+"n": 264,
+"prop_model": 2.967,
+"prop_real": 3.671,
+"meas_model": 6.357,
+"meas_real": 3.676,
+"net_model": 3.447,
+"net_real": 0.035,
+"spearman_net": 0.364,
+"spearman_meas": 0.254
+}
+]
