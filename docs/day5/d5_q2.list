@@ -1,0 +1,14 @@
+# day 5 step 3b: office scene, frontier, 180 s (does coverage stay < 80%?)
+d5_office_frontier_1 frontier office GEOFENCE=40.0
+d5_office_frontier_2 frontier office GEOFENCE=40.0
+d5_office_frontier_3 frontier office GEOFENCE=40.0
+# day 5 step 4b: scripted low-rotation flights with sensors (offline replay)
+d5_lowrot_1 script validation RECORD_SENSORS=1 MAX_MISSION=400.0 SCRIPT_GOALS=/out/cl/day5/script_goals.py
+d5_lowrot_2 script validation RECORD_SENSORS=1 MAX_MISSION=400.0 SCRIPT_GOALS=/out/cl/day5/script_goals.py
+d5_lowrot_3 script validation RECORD_SENSORS=1 MAX_MISSION=400.0 SCRIPT_GOALS=/out/cl/day5/script_goals.py
+# day 5 step 5: new logged flights (pose_cov lambda 0.01, 1 yaw, path 0.5) with sensors
+d5_s5_pc0.01_1 pose_cov validation LAMBDA=0.01 PATH_SPACING=0.5 RECORD_SENSORS=1
+d5_s5_pc0.01_2 pose_cov validation LAMBDA=0.01 PATH_SPACING=0.5 RECORD_SENSORS=1
+d5_s5_pc0.01_3 pose_cov validation LAMBDA=0.01 PATH_SPACING=0.5 RECORD_SENSORS=1
+d5_office_frontier_4 frontier office GEOFENCE=40.0
+d5_office_frontier_5 frontier office GEOFENCE=40.0

@@ -1,0 +1,1 @@
+{"dir": "/out/cl/day5/ovsim/d5lowrot1_s0", "n": 655, "ori_med": 0.17, "ori_mean": 0.37, "rp_med": 0.16, "rp_mean": 0.36, "yaw_med": 0.004, "by_rate": [{"rate": [0, 0.02], "n": 542, "rp_med": 0.11, "ori_med": 0.13}, {"rate": [0.02, 0.05], "n": 93, "rp_med": 1.08, "ori_med": 1.12}, {"rate": [0.05, 0.1], "n": 20, "rp_med": 0.6, "ori_med": 0.63}]}
