@@ -260,6 +260,12 @@ int main(int argc, char** argv) {
       MatrixXd Tp = MatrixXd::Zero(6, n);
       Tp.block(0, PP.clone_cols.back(), 6, 6).setIdentity();
       const auto g = active_slam_sim::pose_gain_split(ld_now, PP.S, Tp, J);
+      {  // roll/pitch-like block: local x/y orientation rows of the end pose (as the OV stage log's ld2)
+        MatrixXd T2 = MatrixXd::Zero(2, n);
+        T2.block(0, PP.clone_cols.back(), 2, 2).setIdentity();
+        const auto g2 = active_slam_sim::pose_gain_split(active_slam_sim::logdet_spd(P.Sigma.block(ic, ic, 2, 2)), PP.S, T2, J);
+        std::cout << "RP2 " << T.id << " " << rung << " " << g2.logdet_now << " " << g2.logdet_prior << " " << g2.logdet_post << "\n";
+      }
       std::cout << "RES " << T.id << " " << rung << " " << ld_now << " " << g.logdet_prior << " " << g.logdet_post << " "
                 << (g.ok ? g.total() : NAN) << " " << n_meas << " " << W.size() << "\n";
     };

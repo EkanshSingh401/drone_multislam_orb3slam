@@ -1,0 +1,4 @@
+d5_map_frontier_1 frontier validation
+d5_map_frontier_2 frontier validation
+d5_map_frontier_3 frontier validation
+d5_map_pc0.01_1 pose_cov validation LAMBDA=0.01
