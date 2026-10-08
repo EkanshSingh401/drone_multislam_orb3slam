@@ -3209,3 +3209,21 @@ translation, not turn-in-place; full-rate replay worse; ablation (`docs/day4/abl
 sampling causes low rotation and NEES 8.6–16.9 vs 2.1–2.8. Step 3 not run. Optimizer's curse
 (`random_pick`): argmax goals over-predicted by 3.05 nats vs random −1.69 (p 7e-9); prediction vs
 realized at goal scale uncorrelated (ρ 0.04).
+
+## 74. Day 5: guard timeout, mapper no-return, office scene, low-rotation consistency, predictor ladder
+
+Executor: `guard_timeout_s` (10 s) — continuous home-phase ESDF hold -> NAV_LAND in place; the 120 s home
+timeout now also applies while holding. Mapper: no-return depth pixels skipped (`no_return_as_free`,
+default false); recorded/GT-pose coverage 1.026–1.032 at 180 s on 4 validation flights (day 4: 1.8–3.7).
+GT coverage `day5/gt_coverage.py` (no-hit rays unknown; curve metrics t50/t90/AUC). Office scene
+(`gen_office_world.py`, `scenes.py`, bridge configs in gen_d455_sim): frontier 23–26% of 2247 m³ at 180 s.
+IMU: OpenVINS loads the configured densities; in-flight long-span residuals 1.0–1.3x configured
+(`day5/imu_long.py`); static on-ground test invalid (contact jitter). Scripted flights (`script_goals.py`):
+roll/pitch NEES grows in slow flight and reaches 7–37 in 0.05 rad/s in-place rotation; live estimate
+drifted and jumped there in 3/3 flights (health gate opened). OpenVINS's simulator on the same GT
+trajectories with our config: rp NEES 0.2–1.4 -> filter consistent; replays at 5 Hz tracking: 0.7–4.8 and
+no drift -> correlated per-frame vision errors (noise-free renders) at the system rate. Predictor
+(`gain_ladder`, `day5/ladder_*.py`, `ov_stage_logdet.patch` scratch build): one update cycle matches
+(1.06x), multi-step from one snapshot over-counts (2.1x at 1 s, worst under rotation), realized pose
+information is an equilibrium (SLAM 89%, MSCKF 9%, init 1%); FEJ off changes nothing. Ladder over 1506
+goals: Spearman ≤ 0.24 at every rung incl. oracle.
