@@ -66,7 +66,8 @@ OFFICE = _office()
 OFFICE_ENVELOPE = (X0, X1, Y0, Y1, H)
 
 SCENES = {"validation": (VALIDATION, VALIDATION_ENVELOPE), "office": (OFFICE, OFFICE_ENVELOPE),
-          "office_plain": (OFFICE, OFFICE_ENVELOPE)}  # day 6: same geometry, feature-poor textures
+          "office_plain": (OFFICE, OFFICE_ENVELOPE),  # day 6: same geometry, feature-poor textures
+          "texlevels_a": (VALIDATION, VALIDATION_ENVELOPE), "texlevels_b": (VALIDATION, VALIDATION_ENVELOPE)}  # day 9: training-only texture levels
 
 def _inside_volume(solids, env):
     x0, x1, y0, y1, z1 = env

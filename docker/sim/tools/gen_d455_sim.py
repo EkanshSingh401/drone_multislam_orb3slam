@@ -945,6 +945,14 @@ FILES = {
         lambda d: gen_bridge_yaml(d, True, "office_plain"),
     "docker/sim/config_sim_only/gz_bridge_d455_nodepth_office_plain.yaml":
         lambda d: gen_bridge_yaml(d, False, "office_plain"),
+    "docker/sim/config_sim_only/gz_bridge_d455_texlevels_a.yaml":
+        lambda d: gen_bridge_yaml(d, True, "texlevels_a"),
+    "docker/sim/config_sim_only/gz_bridge_d455_nodepth_texlevels_a.yaml":
+        lambda d: gen_bridge_yaml(d, False, "texlevels_a"),
+    "docker/sim/config_sim_only/gz_bridge_d455_texlevels_b.yaml":
+        lambda d: gen_bridge_yaml(d, True, "texlevels_b"),
+    "docker/sim/config_sim_only/gz_bridge_d455_nodepth_texlevels_b.yaml":
+        lambda d: gen_bridge_yaml(d, False, "texlevels_b"),
     "docker/sim/config_sim_only/orbslam3_d455_stereo_inertial.yaml":
         lambda d: gen_orbslam3_stereo_inertial(d),
     "docker/sim/config_sim_only/stereo_inertial_ros_params.yaml":

@@ -15,7 +15,7 @@ out['ate_m'] = round(g['ov'].get('ate', float('nan')), 4); out['ate_max_m'] = ro
 out['sim3'] = round(g['ov'].get('sim3_scale', float('nan')), 4)
 cov = json.loads([l for l in run(['python3', '/out/cl/cl_report.py', d]).splitlines() if l.startswith('{')][-1])
 out.update({k: v for k, v in cov.items() if k.startswith('known')})
-cl = run(['python3', '/out/cl/clearance.py', f'{d}/gt.tum', world]) if world in ('validation', 'office', 'office_plain') else ''
+cl = run(['python3', '/out/cl/clearance.py', f'{d}/gt.tum', world]) if world in ('validation', 'office', 'office_plain', 'texlevels_a', 'texlevels_b') else ''
 out['min_clearance_m'] = float(cl.split('min clearance ')[1].split(' m')[0]) if 'min clearance' in cl else None
 out['contact'] = ('CONTACT' in cl) if cl else None
 ne = json.loads([l for l in run(['python3', '/out/cl/cl_nees.py', d]).splitlines() if l.startswith('{')][-1])
@@ -43,7 +43,7 @@ out['chosen_coverage_gain_median'] = round(float(np.median(cvg)), 2) if cvg else
 out['real_share_median'] = round(float(np.median(shares)), 3) if shares else None
 out['real_share_iqr'] = [round(float(np.percentile(shares, 25)), 3), round(float(np.percentile(shares, 75)), 3)] if shares else None
 # day 5: GT-pose coverage (emulated depth vs GT geometry, no-return unknown) and curve metrics
-if world in ('validation', 'office', 'office_plain'):
+if world in ('validation', 'office', 'office_plain', 'texlevels_a', 'texlevels_b'):
     gl = [l for l in run(['python3', '/out/cl/day5/gt_coverage.py', d, world]).splitlines() if l.startswith('{')]
     if gl:
         gc = json.loads(gl[-1]); open(f'{d}/gt_coverage.json', 'w').write(gl[-1] + '\n')

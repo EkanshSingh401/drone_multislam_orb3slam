@@ -319,3 +319,12 @@ Decisions made without the user, each with what / why / alternatives.
   raw per-window drift has no shared normalization (raw path vs raw drift ≈ 0). Both reported, raw headline.
 - **Step 2 targets/statistics robust**: per-track rate = median_k |e_k|²/(1.386 k) (mean squared increments
   were dominated by gross tracks); shape check = median over tracks, not RMS.
+
+## Day 9 (2026-10-12; position primary, planner test decides)
+- **Step 1 stereo**: scratch OpenVINS track log extended to cam1 (`[TRK1]`, same feature ids for stereo
+  matches); all 32 sensor replays (held-out 18 + validation 14) rerun into `/out/cl/day9/rep`.
+  drift_model: one random-walk track per camera per landmark (independent errors per camera), shared
+  landmark columns, one Schur step. cam1 tracks use the cam0 track's predicted rate.
+- **Step 2 training scenes** `texlevels_a`, `texlevels_b`: the VALIDATION geometry (not the office layouts)
+  with each surface's texture contrast scaled to 1 / 0.3 / 0.1 / 0.03 / 0 (0 = ±1 grey-level noise, like
+  office_plain's plain walls), two permutations so a level is not tied to a surface. Training only.

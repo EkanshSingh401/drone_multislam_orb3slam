@@ -12,6 +12,8 @@
 // Usage: drift_model <tasks.txt> <s0_px>
 // tasks.txt:  TASK <id> <jc.cdr>   WP <t rel> x y z qx qy qz qw   TRK x y z q2 n k1 f1 k2 f2 ...   END
 //   (k = waypoint index, f = camera frames since the previous sample of this track; f of the first = 1)
+//   day 9 (stereo): "TRKC <cam> x y z q2 n k1 f1 ..." gives a track in camera <cam>; consecutive TRKC lines
+//   with identical x y z are the same landmark (one per camera) and share its columns (one Schur step).
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -43,7 +45,7 @@ struct PropagatorAccess : public ov_msckf::Propagator {
   using ov_msckf::Propagator::Propagator;
   using ov_msckf::Propagator::predict_and_compute;
 };
-struct Trk { Vector3d p; double q2; std::vector<int> k; std::vector<double> f; };
+struct Trk { Vector3d p; double q2; std::vector<int> k; std::vector<double> f; int cam = 0; bool join = false; };
 struct Task { std::string id, cdr; std::vector<active_slam_sim::Waypoint> W; std::vector<Trk> trk; };
 
 static active_slam_msgs::msg::JointCovariance load_cdr(const std::string& path) {
@@ -68,8 +70,10 @@ int main(int argc, char** argv) {
       active_slam_sim::Waypoint w; double x, y, z, qx, qy, qz, qw; s >> w.t >> x >> y >> z >> qx >> qy >> qz >> qw;
       w.pose.R_GtoI = Eigen::Quaterniond(qw, qx, qy, qz).toRotationMatrix().transpose(); w.pose.p_IinG = Vector3d(x, y, z);
       tasks.back().W.push_back(w);
-    } else if (k == "TRK") {
-      Trk t; int n; s >> t.p.x() >> t.p.y() >> t.p.z() >> t.q2 >> n;
+    } else if (k == "TRK" || k == "TRKC") {
+      Trk t; int n; if (k == "TRKC") s >> t.cam;
+      s >> t.p.x() >> t.p.y() >> t.p.z() >> t.q2 >> n;
+      if (!tasks.back().trk.empty() && k == "TRKC" && (tasks.back().trk.back().p - t.p).norm() < 1e-9) t.join = true;
       for (int i = 0; i < n; ++i) { int kk; double ff; s >> kk >> ff; t.k.push_back(kk); t.f.push_back(ff); }
       tasks.back().trk.push_back(t);
     }
@@ -113,29 +117,35 @@ int main(int argc, char** argv) {
     for (int model = 0; model < 2; ++model) {
       MatrixXd J = MatrixXd::Zero(n, n);
       int used = 0;
+      MatrixXd Jt = MatrixXd::Zero(n + 3, n + 3); int nm_lm = 0;
+      auto schur = [&]() {
+        if (nm_lm >= 2) {
+          const Eigen::Matrix3d A = Jt.block(n, n, 3, 3) + Eigen::Matrix3d::Identity() * 1e-2;
+          J += Jt.topLeftCorner(n, n) - Jt.block(0, n, n, 3) * A.inverse() * Jt.block(n, 0, 3, n);
+          ++used;
+        }
+        Jt.setZero(); nm_lm = 0;
+      };
       for (const auto& t : T.trk) {
+        if (!t.join) schur();
         asi::LandmarkLinearization lm; lm.is_virtual = true; lm.p_FinG = t.p; lm.rep = {{L, Eigen::Matrix3d::Identity()}};
         std::vector<asi::PredictedMeasurement> ms; std::vector<double> fr; int prev = -2;
         std::vector<std::vector<asi::PredictedMeasurement>> segs; std::vector<std::vector<double>> segf;
+        const auto& camm = P.cameras[std::min<size_t>(t.cam, P.cameras.size() - 1)];
         for (size_t i = 0; i < t.k.size(); ++i) {
           asi::PredictedMeasurement pm;
-          if (!asi::predict_measurement(P.current, T.W[t.k[i]].pose, PP.clone_cols[t.k[i]], P.cameras[0], lm, noise, nullptr, &pm)) { prev = -2; continue; }
+          if (!asi::predict_measurement(P.current, T.W[t.k[i]].pose, PP.clone_cols[t.k[i]], camm, lm, noise, nullptr, &pm)) { prev = -2; continue; }
           if (t.k[i] != prev + 1 && !ms.empty()) { segs.push_back(ms); segf.push_back(fr); ms.clear(); fr.clear(); }
           fr.push_back(ms.empty() ? 1.0 : t.f[i]); ms.push_back(pm); prev = t.k[i];
         }
         if (!ms.empty()) { segs.push_back(ms); segf.push_back(fr); }
-        int nmeas = 0; for (auto& s_ : segs) nmeas += (int)s_.size();
-        if (nmeas < 2) continue;
-        // track information on [state (n), landmark (3)], then Schur out the landmark (10 m prior)
-        MatrixXd Jt = MatrixXd::Zero(n + 3, n + 3);
         for (size_t si = 0; si < segs.size(); ++si) {
+          nm_lm += (int)segs[si].size();
           if (model == 0) Jt += active_slam_sim::information(segs[si], n + 3);
           else Jt += active_slam_sim::information_random_walk(segs[si], n + 3, s0, t.q2, segf[si]);
         }
-        const Eigen::Matrix3d A = Jt.block(n, n, 3, 3) + Eigen::Matrix3d::Identity() * 1e-2;
-        J += Jt.topLeftCorner(n, n) - Jt.block(0, n, n, 3) * A.inverse() * Jt.block(n, 0, 3, n);
-        ++used;
       }
+      schur();
       const MatrixXd Sp = (MatrixXd::Identity(n, n) + PP.S * J).partialPivLu().solve(PP.S);
       const int c0 = PP.clone_cols.front(), c1 = PP.clone_cols.back();
       MatrixXd D = MatrixXd::Zero(6, n); D.block(0, c1, 6, 6).setIdentity(); D.block(0, c0, 6, 6) -= MatrixXd::Identity(6, 6);
