@@ -293,3 +293,7 @@ Decisions made without the user, each with what / why / alternatives.
 - **Replays use `init_wait_for_jerk: 0`** like the live harness (new OV_APPEND hook): without it the 5 Hz
   replay initialized only at the end of a flight. First replay batch discarded (configuration), rerun.
 - **Rates**: sim 15 Hz = track_frequency 20 at 30 fps (system setting) vs 5 Hz; EuRoC 21/10.5/5.25.
+- **Step 1 verdict = real**: EuRoC innovations are as time-correlated at 20 Hz (lag-1 0.76) as the sim's at
+  15 Hz (0.69); rule "same pattern in both → real". Runs with < 1000 residual pairs (failed runs) excluded.
+- **Step 5 branch = stop**: Spearman(σ growth, drift) at the consistent rate (5 Hz, NEES rp 3.2) is 0.03
+  for position and 0.47 [0.23, 0.60] for yaw; bar ≥ 0.5 not met → nothing built, no rate change.

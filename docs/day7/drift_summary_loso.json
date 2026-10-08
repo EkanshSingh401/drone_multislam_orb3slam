@@ -1,0 +1,442 @@
+{
+ "windows": 1784,
+ "flights": 132,
+ "by_world": {
+  "office_plain": 74,
+  "office": 141,
+  "forest": 26,
+  "validation": 1543
+ },
+ "targets": {
+  "drift_pos_per_m": {
+   "median": 0.0023,
+   "iqr": [
+    0.0013,
+    0.00399
+   ],
+   "p10_p90": [
+    0.0008,
+    0.00803
+   ],
+   "ratio_p90_p10": 10.1,
+   "share_var_between_flights": 1.283,
+   "by_world_median": {
+    "forest": 0.00519,
+    "office": 0.00427,
+    "office_plain": 0.00521,
+    "validation": 0.0021
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.413,
+     "ci": [
+      -0.497,
+      -0.318
+     ],
+     "n": 1784
+    },
+    "rate": {
+     "rho": 0.401,
+     "ci": [
+      0.291,
+      0.494
+     ],
+     "n": 1784
+    },
+    "n_slam": {
+     "rho": -0.579,
+     "ci": [
+      -0.656,
+      -0.488
+     ],
+     "n": 1784
+    },
+    "range_med": {
+     "rho": 0.058,
+     "ci": [
+      -0.031,
+      0.145
+     ],
+     "n": 1758
+    },
+    "return_frac": {
+     "rho": -0.41,
+     "ci": [
+      -0.493,
+      -0.309
+     ],
+     "n": 1758
+    },
+    "plain_frac": {
+     "rho": 0.201,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 1758
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 141,
+     "r2": 0.101,
+     "spearman_pred": 0.769
+    },
+    "office_plain": {
+     "n": 74,
+     "r2": 0.656,
+     "spearman_pred": 0.83
+    },
+    "validation": {
+     "n": 1543,
+     "r2": 0.299,
+     "spearman_pred": 0.476
+    }
+   },
+   "log_ols": {
+    "n": 1758,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     -0.4,
+     -0.135,
+     -0.536,
+     0.229,
+     0.075
+    ],
+    "r2_lofo": 0.443
+   }
+  },
+  "drift_yaw_per_m": {
+   "median": 0.0159,
+   "iqr": [
+    0.00694,
+    0.03252
+   ],
+   "p10_p90": [
+    0.0028,
+    0.05937
+   ],
+   "ratio_p90_p10": 21.2,
+   "share_var_between_flights": 0.373,
+   "by_world_median": {
+    "forest": 0.02036,
+    "office": 0.02307,
+    "office_plain": 0.02094,
+    "validation": 0.01495
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.397,
+     "ci": [
+      -0.468,
+      -0.302
+     ],
+     "n": 1784
+    },
+    "rate": {
+     "rho": 0.312,
+     "ci": [
+      0.207,
+      0.404
+     ],
+     "n": 1784
+    },
+    "n_slam": {
+     "rho": -0.285,
+     "ci": [
+      -0.364,
+      -0.201
+     ],
+     "n": 1784
+    },
+    "range_med": {
+     "rho": -0.165,
+     "ci": [
+      -0.266,
+      -0.066
+     ],
+     "n": 1758
+    },
+    "return_frac": {
+     "rho": -0.137,
+     "ci": [
+      -0.209,
+      -0.035
+     ],
+     "n": 1758
+    },
+    "plain_frac": {
+     "rho": 0.059,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 1758
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 141,
+     "r2": 0.06,
+     "spearman_pred": 0.385
+    },
+    "office_plain": {
+     "n": 74,
+     "r2": 0.095,
+     "spearman_pred": 0.361
+    },
+    "validation": {
+     "n": 1542,
+     "r2": -0.061,
+     "spearman_pred": 0.343
+    }
+   },
+   "log_ols": {
+    "n": 1757,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     -0.514,
+     -0.019,
+     0.021,
+     -0.004,
+     -0.125
+    ],
+    "r2_lofo": 0.151
+   }
+  },
+  "dsig_pos_per_m": {
+   "median": 0.00043,
+   "iqr": [
+    -0.00041,
+    0.00186
+   ],
+   "p10_p90": [
+    -0.00159,
+    0.00389
+   ],
+   "ratio_p90_p10": null,
+   "share_var_between_flights": 3.345,
+   "by_world_median": {
+    "forest": 0.00587,
+    "office": 0.00124,
+    "office_plain": 0.00119,
+    "validation": 0.00038
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.143,
+     "ci": [
+      -0.191,
+      -0.099
+     ],
+     "n": 1784
+    },
+    "rate": {
+     "rho": 0.078,
+     "ci": [
+      0.033,
+      0.118
+     ],
+     "n": 1784
+    },
+    "n_slam": {
+     "rho": -0.087,
+     "ci": [
+      -0.145,
+      -0.012
+     ],
+     "n": 1784
+    },
+    "range_med": {
+     "rho": -0.065,
+     "ci": [
+      -0.107,
+      -0.021
+     ],
+     "n": 1758
+    },
+    "return_frac": {
+     "rho": 0.151,
+     "ci": [
+      0.073,
+      0.235
+     ],
+     "n": 1758
+    },
+    "plain_frac": {
+     "rho": 0.063,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 1758
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 110,
+     "r2": -0.226,
+     "spearman_pred": -0.394
+    },
+    "office_plain": {
+     "n": 54,
+     "r2": -0.469,
+     "spearman_pred": -0.453
+    },
+    "validation": {
+     "n": 985,
+     "r2": -1.213,
+     "spearman_pred": -0.375
+    }
+   },
+   "log_ols": {
+    "n": 1149,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     0.023,
+     -0.118,
+     -0.513,
+     -0.238,
+     0.284
+    ],
+    "r2_lofo": 0.047
+   }
+  },
+  "dsig_yaw_per_m": {
+   "median": 0.00034,
+   "iqr": [
+    7e-05,
+    0.0007
+   ],
+   "p10_p90": [
+    -0.00012,
+    0.00149
+   ],
+   "ratio_p90_p10": null,
+   "share_var_between_flights": 0.423,
+   "by_world_median": {
+    "forest": 0.00034,
+    "office": 0.00083,
+    "office_plain": 0.00069,
+    "validation": 0.00029
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.576,
+     "ci": [
+      -0.659,
+      -0.461
+     ],
+     "n": 1784
+    },
+    "rate": {
+     "rho": 0.717,
+     "ci": [
+      0.67,
+      0.754
+     ],
+     "n": 1784
+    },
+    "n_slam": {
+     "rho": -0.62,
+     "ci": [
+      -0.666,
+      -0.564
+     ],
+     "n": 1784
+    },
+    "range_med": {
+     "rho": -0.374,
+     "ci": [
+      -0.464,
+      -0.261
+     ],
+     "n": 1758
+    },
+    "return_frac": {
+     "rho": -0.175,
+     "ci": [
+      -0.293,
+      -0.053
+     ],
+     "n": 1758
+    },
+    "plain_frac": {
+     "rho": 0.154,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 1758
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 136,
+     "r2": 0.505,
+     "spearman_pred": 0.809
+    },
+    "office_plain": {
+     "n": 72,
+     "r2": 0.32,
+     "spearman_pred": 0.659
+    },
+    "validation": {
+     "n": 1240,
+     "r2": 0.203,
+     "spearman_pred": 0.596
+    }
+   },
+   "log_ols": {
+    "n": 1448,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     -0.084,
+     0.42,
+     -0.432,
+     -0.242,
+     0.053
+    ],
+    "r2_lofo": 0.479
+   }
+  }
+ },
+ "calib_drift_pos_per_m_vs_dsig_pos_per_m": {
+  "rho": 0.109,
+  "ci": [
+   0.064,
+   0.157
+  ]
+ },
+ "calib_drift_yaw_per_m_vs_dsig_yaw_per_m": {
+  "rho": 0.294,
+  "ci": [
+   0.212,
+   0.368
+  ]
+ }
+}

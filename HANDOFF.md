@@ -405,6 +405,17 @@ Later / noted, not started:
   hold, PX4 ground-contact / local-height disarm. Final executor logic is in the image (rebuilt at the end of day 6).
   `office_plain` world (feature-poor). EuRoC on disk (`/out/euroc`, fetch via DSpace API; rate-limited).
   Step-4 drift tool `day6/drift_windows.py`.
+- **Day 7 (REPORT_2026-10-10.md, PATCHES §76):** covariance-vs-drift mismatch is REAL (EuRoC residuals as
+  time-correlated as sim; KLT error drifts along tracks; at 5 Hz NEES ok but σ growth still does not
+  track drift). Nothing built. Sensor flights: `RECORD_DEPTH=0` (5–8 GB each). Scratch-build logging:
+  `OV_NIS_LOG`, `OV_TRK_LOG` (`day7/ov_nis.patch`); replays with `OV_APPEND="init_wait_for_jerk: 0"`.
+- **Hardware checklist (add before any real flight):** (1) OpenVINS diverges on the ground within ~1 s of
+  touchdown (no parallax, ZUPT off) — vision must be withheld/latched at landing and disarm must not wait
+  for it; (2) PX4's multicopter land detector is slow (did not fire within ~3 s of touchdown in sim even
+  with a valid baro height) — the executor disarms on PX4 ground contact / PX4 local height or the
+  OpenVINS backup; verify on hardware with props off first; (3) baro height can drift ~0.5–1 m over a
+  flight / be ~1 m off at takeoff (sim) — height setpoints are offset-corrected; the offset learning must
+  start as soon as either height says airborne (pending fix).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

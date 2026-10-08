@@ -1,0 +1,11 @@
+# day 7 step 3: sensor flights (no depth), current executor, frontier and pose_cov lambda 0 mixed, office + plain office
+d7_sens_tex_fr_1 frontier office GEOFENCE=40.0 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_plain_fr_1 frontier office_plain GEOFENCE=40.0 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_tex_pc0_1 pose_cov office GEOFENCE=40.0 LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_plain_pc0_1 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_tex_fr_2 frontier office GEOFENCE=40.0 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_plain_fr_2 frontier office_plain GEOFENCE=40.0 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_tex_pc0_2 pose_cov office GEOFENCE=40.0 LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_plain_pc0_2 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_tex_fr_3 frontier office GEOFENCE=40.0 RECORD_SENSORS=1 RECORD_DEPTH=0
+d7_sens_plain_pc0_3 pose_cov office_plain GEOFENCE=40.0 LAMBDA=0.0 PATH_SPACING=0.5 RECORD_SENSORS=1 RECORD_DEPTH=0

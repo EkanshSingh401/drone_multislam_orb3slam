@@ -3238,3 +3238,11 @@ EuRoC (4 seqs x 20/10/5 Hz): GT orientation error 0.3–1.0° >> filter σ 0.05�
 rate unchanged. Goal spread: realized Δlogdet tails ±1–2 nats; oracle Spearman 0.59 (plain office) / 0.45
 (office) vs 0.24 (validation); planner 0.39 in plain office. Drift per metre (1784 windows, 132 flights):
 p90/p10 10–21, position drift R² 0.44 from landmarks/returns/rotation/speed; σ growth vs drift ρ 0.11.
+
+## 76. Day 7: covariance vs drift is real (EuRoC whiteness), KLT drift mechanism, no build
+
+NIS/whiteness (scratch build, `day7/ov_nis.patch`): SLAM residual lag-1 correlation EuRoC 0.76 @20 Hz, sim
+0.69 @15 Hz (5 Hz: 0.65 / 0.58); NIS/dof ≪ 1 both. KLT vs GT pixels (sim): error lag-1 0.99 (15 Hz) / ~0.9
+(5 Hz), ~0.6 px after 1 s regardless of rate, plain surfaces 3–4x worse. 9 depth-free sensor flights replayed
+at 15/5 Hz: NEES rp 5.3 / 3.2; Spearman(σ growth, drift) pos 0.04 / 0.03, yaw 0.20 / 0.47. Drift regression
+leave-one-scene-out R² 0.10–0.66 (pos). Branch: stop, nothing built.

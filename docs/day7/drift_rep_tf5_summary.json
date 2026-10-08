@@ -1,0 +1,412 @@
+{
+ "windows": 114,
+ "flights": 9,
+ "by_world": {
+  "office": 44,
+  "office_plain": 70
+ },
+ "targets": {
+  "drift_pos_per_m": {
+   "median": 0.00333,
+   "iqr": [
+    0.00203,
+    0.00684
+   ],
+   "p10_p90": [
+    0.00132,
+    0.0137
+   ],
+   "ratio_p90_p10": 10.4,
+   "share_var_between_flights": 0.536,
+   "by_world_median": {
+    "office": 0.00215,
+    "office_plain": 0.00457
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.68,
+     "ci": [
+      -0.804,
+      -0.309
+     ],
+     "n": 114
+    },
+    "rate": {
+     "rho": 0.411,
+     "ci": [
+      -0.025,
+      0.573
+     ],
+     "n": 114
+    },
+    "n_slam": {
+     "rho": -0.649,
+     "ci": [
+      -0.778,
+      -0.23
+     ],
+     "n": 114
+    },
+    "range_med": {
+     "rho": 0.273,
+     "ci": [
+      -0.07,
+      0.449
+     ],
+     "n": 114
+    },
+    "return_frac": {
+     "rho": -0.505,
+     "ci": [
+      -0.714,
+      -0.063
+     ],
+     "n": 114
+    },
+    "plain_frac": {
+     "rho": 0.573,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 114
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 44,
+     "r2": -0.257,
+     "spearman_pred": 0.614
+    },
+    "office_plain": {
+     "n": 70,
+     "r2": -0.253,
+     "spearman_pred": 0.598
+    }
+   },
+   "log_ols": {
+    "n": 114,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     -0.433,
+     -0.119,
+     -0.393,
+     0.002,
+     0.033
+    ],
+    "r2_lofo": 0.485
+   }
+  },
+  "drift_yaw_per_m": {
+   "median": 0.01307,
+   "iqr": [
+    0.00626,
+    0.02584
+   ],
+   "p10_p90": [
+    0.00304,
+    0.05292
+   ],
+   "ratio_p90_p10": 17.4,
+   "share_var_between_flights": 0.467,
+   "by_world_median": {
+    "office": 0.01232,
+    "office_plain": 0.01405
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.533,
+     "ci": [
+      -0.649,
+      -0.121
+     ],
+     "n": 114
+    },
+    "rate": {
+     "rho": 0.434,
+     "ci": [
+      0.055,
+      0.629
+     ],
+     "n": 114
+    },
+    "n_slam": {
+     "rho": -0.364,
+     "ci": [
+      -0.549,
+      0.063
+     ],
+     "n": 114
+    },
+    "range_med": {
+     "rho": 0.232,
+     "ci": [
+      0.01,
+      0.417
+     ],
+     "n": 114
+    },
+    "return_frac": {
+     "rho": -0.348,
+     "ci": [
+      -0.51,
+      -0.07
+     ],
+     "n": 114
+    },
+    "plain_frac": {
+     "rho": 0.144,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 114
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 44,
+     "r2": 0.028,
+     "spearman_pred": 0.467
+    },
+    "office_plain": {
+     "n": 70,
+     "r2": -0.01,
+     "spearman_pred": 0.329
+    }
+   },
+   "log_ols": {
+    "n": 114,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     -0.594,
+     0.063,
+     -0.067,
+     0.01,
+     0.114
+    ],
+    "r2_lofo": 0.077
+   }
+  },
+  "dsig_pos_per_m": {
+   "median": 0.0017,
+   "iqr": [
+    -2e-05,
+    0.00317
+   ],
+   "p10_p90": [
+    -0.00164,
+    0.00513
+   ],
+   "ratio_p90_p10": null,
+   "share_var_between_flights": 0.042,
+   "by_world_median": {
+    "office": 0.00104,
+    "office_plain": 0.00211
+   },
+   "spearman": {
+    "speed": {
+     "rho": 0.083,
+     "ci": [
+      -0.196,
+      0.272
+     ],
+     "n": 114
+    },
+    "rate": {
+     "rho": -0.164,
+     "ci": [
+      -0.375,
+      0.099
+     ],
+     "n": 114
+    },
+    "n_slam": {
+     "rho": -0.035,
+     "ci": [
+      -0.211,
+      0.133
+     ],
+     "n": 114
+    },
+    "range_med": {
+     "rho": -0.002,
+     "ci": [
+      -0.13,
+      0.152
+     ],
+     "n": 114
+    },
+    "return_frac": {
+     "rho": -0.044,
+     "ci": [
+      -0.223,
+      0.156
+     ],
+     "n": 114
+    },
+    "plain_frac": {
+     "rho": 0.065,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 114
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 30,
+     "r2": -0.075,
+     "spearman_pred": 0.243
+    },
+    "office_plain": {
+     "n": 55,
+     "r2": -0.056,
+     "spearman_pred": 0.248
+    }
+   },
+   "log_ols": {
+    "n": 85,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     0.264,
+     -0.287,
+     -0.234,
+     -0.242,
+     -0.372
+    ],
+    "r2_lofo": -0.217
+   }
+  },
+  "dsig_yaw_per_m": {
+   "median": 0.00066,
+   "iqr": [
+    0.00025,
+    0.00129
+   ],
+   "p10_p90": [
+    8e-05,
+    0.00276
+   ],
+   "ratio_p90_p10": 36.2,
+   "share_var_between_flights": 0.385,
+   "by_world_median": {
+    "office": 0.00073,
+    "office_plain": 0.00058
+   },
+   "spearman": {
+    "speed": {
+     "rho": -0.519,
+     "ci": [
+      -0.728,
+      -0.124
+     ],
+     "n": 114
+    },
+    "rate": {
+     "rho": 0.631,
+     "ci": [
+      0.289,
+      0.776
+     ],
+     "n": 114
+    },
+    "n_slam": {
+     "rho": -0.354,
+     "ci": [
+      -0.628,
+      0.096
+     ],
+     "n": 114
+    },
+    "range_med": {
+     "rho": 0.268,
+     "ci": [
+      -0.118,
+      0.555
+     ],
+     "n": 114
+    },
+    "return_frac": {
+     "rho": -0.209,
+     "ci": [
+      -0.399,
+      0.112
+     ],
+     "n": 114
+    },
+    "plain_frac": {
+     "rho": 0.133,
+     "ci": [
+      NaN,
+      NaN
+     ],
+     "n": 114
+    }
+   },
+   "log_ols_loso": {
+    "office": {
+     "n": 43,
+     "r2": 0.121,
+     "spearman_pred": 0.523
+    },
+    "office_plain": {
+     "n": 61,
+     "r2": 0.436,
+     "spearman_pred": 0.724
+    }
+   },
+   "log_ols": {
+    "n": 104,
+    "predictors": [
+     "speed",
+     "rate",
+     "n_slam",
+     "range_med",
+     "return_frac"
+    ],
+    "std_coef": [
+     -0.41,
+     0.453,
+     -0.296,
+     0.268,
+     0.565
+    ],
+    "r2_lofo": 0.443
+   }
+  }
+ },
+ "calib_drift_pos_per_m_vs_dsig_pos_per_m": {
+  "rho": 0.029,
+  "ci": [
+   -0.105,
+   0.187
+  ]
+ },
+ "calib_drift_yaw_per_m_vs_dsig_yaw_per_m": {
+  "rho": 0.469,
+  "ci": [
+   0.227,
+   0.598
+  ]
+ }
+}
