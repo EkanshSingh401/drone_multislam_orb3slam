@@ -230,3 +230,29 @@ Decisions made without the user, each with what / why / alternatives.
   flights, diagnostics only. Chosen to separate "noise-free renders" from "systematic correlated
   projection error"; results in the report.
 - **Step 5 replication flights** used yaw_samples 1 (user: yaw sampling off by default), path 0.5, λ 0.01.
+
+## Day 6 (2026-10-08 → 09; user's answers to the day-5 items)
+- **Step 1, executor default for all planners (planners never command yaw rates; the executor does):**
+  yaw keeps changing toward the goal yaw while translating (unchanged); when in place (< 5 cm from the
+  position goal), a remaining yaw change < `turn_deadband` (0.3 rad) is not flown and a larger one is
+  flown as one turn at the full `yaw_rate` 0.6 rad/s (frontier's turn rate) — no slow in-place yaw can
+  be produced by any goal stream. The home phase's turn-then-move already turns at 0.6 rad/s.
+- **Step 5, arming failure cause**: the executor sent ARM only on ticks with `int(tp*20) % 20 == 1`, a
+  20 Hz wall-clock timer tested against sim time; at RTF ~1 (the lighter office scene) the index can
+  skip 1 every second, so no ARM was ever sent (PX4 log: "Ready for takeoff!", no arm, no denial).
+  Fix: ARM every 1 s by elapsed time + log PX4's command acks.
+- **Step 5, landing**: two causes found for PX4's land detector never firing: (i) with vision as the
+  height reference, PX4's height dead-reckons once vision is withheld below 0.4 m; (ii) the hold was
+  keyed on OpenVINS height, which diverges upward on the ground and released the hold. Changes:
+  EKF2_HGT_REF 0 (baro) by default in cl_flight (`PX4_HGT_REF` env; 3 = old), executor corrects its
+  height setpoint by the learned PX4-minus-OpenVINS height offset (EMA, frozen near ground/landing),
+  and the landing hold is latched. First attempt with baro alone (no offset) climbed short (PX4 baro
+  1.5 m vs OpenVINS 1.25 m): 3 flights moved to `runs_invalid/` (configuration error).
+- **Disk**: /out hit the batch's 50 GB floor; deleted my own regenerable day-5 derived bags (degraded,
+  synthetic-IMU, replay recordings; 78 GB). Results computed from them are kept.
+- **EuRoC**: direct DSpace bitstream URLs found (`euroc/fetch.sh`), but the ETH Research Collection
+  rate-limits content downloads (HTTP 429, "access temporarily restricted"). Background loop probes
+  once per 20 min. Kaggle mirror needs an account (none on this host).
+- **Step 3 feature-poor variant `office_plain`**: same geometry; NE room walls, the x = 16 partitions,
+  two north corridor segments and NE furniture near-uniform grey (±1 grey level); the south-centre
+  room dim (emissive 0.15 vs 0.55).

@@ -21,7 +21,7 @@ import math
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
-from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleLandDetected, VehicleStatus
+from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleCommand, VehicleCommandAck, VehicleLandDetected, VehicleLocalPosition, VehicleStatus
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -56,6 +56,13 @@ class OffboardExecutor(Node):
         # day 5: a continuous ESDF-guard hold in the home phase longer than this lands in place
         # (day 3: holds lasted 314-460 s, until the 900 s executor timeout)
         self.guard_timeout = float(self.declare_parameter("guard_timeout_s", 10.0).value)
+        # day 6: no slow in-place yaw (live OpenVINS drifted and jumped in 3/3 flights during a
+        # 0.05 rad/s in-place rotation, day 5). Yaw changes while translating as before; when the
+        # goal is (nearly) reached, a remaining yaw change smaller than turn_deadband is ignored and
+        # a larger one is done as one turn at the full yaw_rate (= frontier's turn rate).
+        self.turn_deadband = float(self.declare_parameter("turn_deadband", 0.3).value)
+        self._turning = False
+        self._last_arm_cmd = -1e9
         pre = f"/{self.ns}"
         q = px4_qos()
         self.pub_mode = self.create_publisher(OffboardControlMode, f"{pre}/fmu/in/offboard_control_mode", q)
@@ -67,6 +74,14 @@ class OffboardExecutor(Node):
             self.create_subscription(VehicleStatus, f"{pre}/fmu/out/vehicle_status{s}", self._on_status, q)
             self.create_subscription(VehicleLandDetected, f"{pre}/fmu/out/vehicle_land_detected{s}", self._on_land, q)
         self.land_det = None
+        # day 6: with a barometric height reference PX4's height differs from OpenVINS's by a slowly
+        # varying offset; setpoints are in the OpenVINS frame, so the height setpoint is shifted by
+        # z_off = PX4 height - OpenVINS height (EMA, ~2 s; frozen near the ground and while landing).
+        self.z_off = 0.0
+        for s_ in ("_v1", ""):
+            self.create_subscription(VehicleLocalPosition, f"{pre}/fmu/out/vehicle_local_position{s_}", self._on_lpos, q)
+        for s_ in ("_v1", ""):
+            self.create_subscription(VehicleCommandAck, f"{pre}/fmu/out/vehicle_command_ack{s_}", self._on_ack, q)
         self.create_subscription(Odometry, self.declare_parameter("odom_topic", "/ov_msckf/odomimu").value, self._on_odom, 10)
         self.create_subscription(PoseStamped, self.declare_parameter("goal_topic", "/exploration_planner/goal").value, self._on_goal, 10)
         self.create_subscription(String, self.declare_parameter("status_topic", "/exploration_planner/status").value, self._on_pstatus, 10)
@@ -89,6 +104,18 @@ class OffboardExecutor(Node):
     # ---------------- inputs ----------------
     def _on_status(self, m): self.status = m
     def _on_land(self, m): self.land_det = m
+
+    def _on_lpos(self, m):
+        if self.odom is None or not m.z_valid or self.phase in ("land", "done", "wait_for_fmu"):
+            return
+        oz = self.odom.pose.pose.position.z - P_BASE_IMU[2]
+        if oz < 0.4:
+            return
+        self.z_off += 0.01 * ((-m.z) - oz - self.z_off)
+
+    def _on_ack(self, m):
+        if m.command == VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM:
+            self.get_logger().info(f"ARM/DISARM ack: result {m.result} (0 = accepted)")
     def _on_odom(self, m): self.odom = m
     def _on_pstatus(self, m): self.planner_status = m.data
 
@@ -136,7 +163,7 @@ class OffboardExecutor(Node):
         bz = z - P_BASE_IMU[2]
         m = TrajectorySetpoint()
         m.timestamp = self.stamp()
-        m.position = [float(by), float(bx), float(-bz)]
+        m.position = [float(by), float(bx), float(-(bz + self.z_off))]
         m.yaw = float(wrap(math.pi / 2 - yaw))
         self.pub_sp.publish(m)
 
@@ -151,6 +178,15 @@ class OffboardExecutor(Node):
         d = math.sqrt(dx * dx + dy * dy + dz * dz)
         s = min(1.0, self.speed * dt / d) if d > 1e-6 else 0.0
         dyaw = wrap(gyaw - yaw)
+        if d < 0.05:                       # in place: deadband, then one full-rate turn (day 6)
+            if abs(dyaw) >= self.turn_deadband:
+                self._turning = True
+            elif self._turning and abs(dyaw) < 0.02:
+                self._turning = False
+            if not self._turning:
+                dyaw = 0.0
+        else:
+            self._turning = False
         yaw += max(-self.yaw_rate * dt, min(self.yaw_rate * dt, dyaw))
         self.sp = (x + s * dx, y + s * dy, z + s * dz, wrap(yaw))
         return d < 0.05 and abs(dyaw) < 0.05
@@ -191,7 +227,11 @@ class OffboardExecutor(Node):
             self.cmd(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, param1=1.0, param2=6.0)
             self.go("arm")
         elif self.phase == "arm":
-            if int(tp * HZ) % int(HZ) == 1:
+            # day 6: by elapsed time. The old `int(tp * HZ) % HZ == 1` test mixed the wall-time timer
+            # with sim time and could skip the window every second at RTF ~ 1 (office: 2/5 never armed).
+            if t - self._last_arm_cmd >= 1.0:
+                self._last_arm_cmd = t
+                self.get_logger().info("sending ARM")
                 self.cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0)
             if armed:
                 self.go("climb")
@@ -266,7 +306,10 @@ class OffboardExecutor(Node):
             vz = self.odom.twist.twist.linear.z
             ld = self.land_det
             # below 0.4 m: stop feeding vision so PX4 touches down on IMU dead-reckoning
-            self.pub_vio_hold.publish(Bool(data=bool(pz < self.home[2] + 0.4)))
+            # day 6: LATCHED. OpenVINS diverges (often upward) within ~1 s of ground contact, which used
+            # to release the hold and feed PX4 diverging vision at touchdown.
+            self._vio_hold = getattr(self, "_vio_hold", False) or pz < self.home[2] + 0.4
+            self.pub_vio_hold.publish(Bool(data=bool(self._vio_hold)))
             px4_says = ld is not None and (ld.landed or ld.maybe_landed)
             ov_says = tp > 2.0 and pz < self.home[2] + 0.12 and abs(vz) < 0.15
             if armed and (px4_says or ov_says):
@@ -286,7 +329,7 @@ class OffboardExecutor(Node):
             self.last_log = t
             px, py, pz, pyaw = self.ov_pose()
             rec = {"t": round(t, 3), "phase": self.phase, "ov": [round(px, 3), round(py, 3), round(pz, 3), round(pyaw, 3)],
-                   "sp": [round(v, 3) for v in self.sp], "esdf": round(self.esdf_at(px, py), 3), "planner": self.planner_status}
+                   "sp": [round(v, 3) for v in self.sp], "esdf": round(self.esdf_at(px, py), 3), "planner": self.planner_status, "z_off": round(self.z_off, 3)}
             self.pub_log.publish(String(data=json.dumps(rec)))
             print(json.dumps(rec), flush=True)
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # cl_flight.sh <frontier|ig|pose_cov|script> <outdir> : one closed-loop exploration flight (PATCHES s64; overnight stages)
-# env: GEOFENCE (executor geofence_radius, m, as a double; office: 40.0), EXECUTOR_ARGS (extra "-p k:=v" for the executor, day 5), WORLD (validation|forest, default validation), MAX_MISSION (s, default 180),
+# env: PX4_HGT_REF (EKF2_HGT_REF; day 6 default 0 = baro so PX4 keeps a valid height after the
+#      vision hold at landing and its land detector can fire; 3 = vision, days 1-5), GEOFENCE (executor geofence_radius, m, as a double; office: 40.0), EXECUTOR_ARGS (extra "-p k:=v" for the executor, day 5), WORLD (validation|forest, default validation), MAX_MISSION (s, default 180),
 #      RECORD_SENSORS=1 (day 4: also record stereo IR, IMU, depth for offline replay), LAMBDA, YAW_SAMPLES, PATH_SPACING (day 3 candidate set), PLANNER_ARGS (extra "-p k:=v" for the planner, e.g. sigma_virtual),
 #      FAULT_MODE (none|dropout|drift|jump), FAULT_T (s after airborne), FAULT_DUR, FAULT_DRIFT, FAULT_JUMP
 set -o pipefail
@@ -11,7 +12,7 @@ pkill -f '[r]un_subscribe_msckf' ; pkill -f '[o]penvins_to_px4'; pkill -f '[o]ct
 MODEL=gz_x500_d455 D455_DEPTH=1 WORLD=${WORLD:-validation} START_SLAM=0 SLAM_MODE=stereo_inertial /opt/scripts/bringup_sim.sh > $OD/bringup.log 2>&1 \
   || { echo "bringup failed"; tail -5 $OD/bringup.log; exit 3; }
 P="/opt/PX4-Autopilot/build/px4_sitl_default/bin/px4-param --instance 1"
-(cd /tmp; for kv in EKF2_GPS_CTRL=0 EKF2_EV_CTRL=15 EKF2_HGT_REF=3 EKF2_MAG_TYPE=5 EKF2_EV_NOISE_MD=0 EKF2_EV_DELAY=0 \
+(cd /tmp; for kv in EKF2_GPS_CTRL=0 EKF2_EV_CTRL=15 EKF2_HGT_REF=${PX4_HGT_REF:-0} EKF2_MAG_TYPE=5 EKF2_EV_NOISE_MD=0 EKF2_EV_DELAY=0 \
   EKF2_EV_POS_X=0.11448 EKF2_EV_POS_Y=-0.0051 EKF2_EV_POS_Z=-0.23026 COM_ARM_WO_GPS=1 LNDMC_TRIG_TIME=0.3; do $P set ${kv%%=*} ${kv#*=} >/dev/null; done)
 mkdir -p $OD/ov_config && cp /opt/config_sim_only/*.yaml $OD/ov_config/ && echo 'init_wait_for_jerk: 0' >> $OD/ov_config/openvins_estimator_config.yaml
 ros2 bag record -s mcap -o $OD/flight.bag /ground_truth/pose_info /clock /ov_msckf/odomimu /openvins/joint_covariance \
@@ -44,5 +45,6 @@ sleep 3
 pkill -TERM -f "record -s mcap -o $OD/[f]light.bag"; sleep 3
 pkill -f '[e]xploration_planner'; pkill -f '[s]cript_goals'; pkill -f '[o]ctomap_mapper'; pkill -f '[o]penvins_to_px4'; pkill -f '[r]un_subscribe_msckf'; pkill -f '[g]t_watchdog'; pkill -f '[v]io_fault_injector'; pkill -f '[v]io_health_gate'
 cat $OD/watchdog.log | grep TERMINATED
+cp /out/logs/px4.log $OD/px4.log 2>/dev/null
 /opt/scripts/bringup_sim.sh --stop > $OD/stop2.log 2>&1
 grep -E 'phase|explore ends|landed|failed|timed out' $OD/executor.log | tail -12
