@@ -381,6 +381,11 @@ Later / noted, not started:
   (use `day4/gt_coverage.py` GT-geometry coverage on validation flights); NEES blow-up of the new
   set is caused by yaw sampling (low rotation -> roll/pitch over-confident); pose-gain prediction does
   not track realized covariance at goal scale (optimizer's curse shown with `random_pick`).
+- **Day 5 (REPORT_2026-10-08.md, DECISIONS "Day 5", in progress):** step 1 done — executor
+  `guard_timeout_s` (10 s) lands in place after a continuous home-phase ESDF hold; `cl_flight.sh`
+  takes `EXECUTOR_ARGS`. Step 2: mapper `no_return_as_free` (default false = unknown). Step 3b: office
+  scene (`gen_office_world.py`, geometry in `docker/tools/closed_loop/scenes.py`, `WORLD=office`).
+  **Pass doubles as `40.0`, never `40`** in env/params (int -> InvalidParameterTypeException).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
