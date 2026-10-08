@@ -1,0 +1,126 @@
+--- root/ws_offboard_control/src/open_vins/ov_msckf/src/update/UpdaterMSCKF.cpp	2026-10-07 14:05:18.000000000 +0000
++++ out/cl/day5/ovws/src/open_vins/ov_msckf/src/update/UpdaterMSCKF.cpp	2026-10-08 13:52:58.956278939 +0000
+@@ -1,3 +1,5 @@
++#include <cstdio>
++#include <cstdlib>
+ /*
+  * OpenVINS: An Open Platform for Visual-Inertial Research
+  * Copyright (C) 2018-2023 Patrick Geneva
+@@ -212,6 +214,14 @@
+     Eigen::MatrixXd S = H_x * P_marg * H_x.transpose();
+     S.diagonal() += _options.sigma_pix_sq * Eigen::VectorXd::Ones(S.rows());
+     double chi2 = res.dot(S.llt().solve(res));
++    {  // day 7 diagnostic (ov_nis.patch): OV_NIS_LOG set -> per-feature NIS and normalized residuals
++      static const bool nis_on = std::getenv("OV_NIS_LOG") != nullptr;
++      if (nis_on) {
++        std::printf("[NIS] %.6f M %zu %d %.6f", state->_timestamp, (size_t)(*it2)->featid, (int)res.rows(), chi2);
++        for (int k = 0; k < std::min(2, (int)res.rows()); k++) std::printf(" %.6f", res(k) / std::sqrt(S(k, k)));
++        std::printf("\n");
++      }
++    }
+ 
+     // Get our threshold (we precompute up to 500 but handle the case that it is more)
+     double chi2_check;
+--- root/ws_offboard_control/src/open_vins/ov_msckf/src/update/UpdaterSLAM.cpp	2026-10-07 14:05:18.000000000 +0000
++++ out/cl/day5/ovws/src/open_vins/ov_msckf/src/update/UpdaterSLAM.cpp	2026-10-08 13:52:58.956278939 +0000
+@@ -1,3 +1,5 @@
++#include <cstdio>
++#include <cstdlib>
+ /*
+  * OpenVINS: An Open Platform for Visual-Inertial Research
+  * Copyright (C) 2018-2023 Patrick Geneva
+@@ -398,6 +400,14 @@
+         ((int)feat.featid < state->_options.max_aruco_features) ? _options_aruco.sigma_pix_sq : _options_slam.sigma_pix_sq;
+     S.diagonal() += sigma_pix_sq * Eigen::VectorXd::Ones(S.rows());
+     double chi2 = res.dot(S.llt().solve(res));
++    {  // day 7 diagnostic (ov_nis.patch): OV_NIS_LOG set -> per-feature NIS and normalized residuals
++      static const bool nis_on = std::getenv("OV_NIS_LOG") != nullptr;
++      if (nis_on) {
++        std::printf("[NIS] %.6f S %zu %d %.6f", state->_timestamp, (size_t)feat.featid, (int)res.rows(), chi2);
++        for (int k = 0; k < std::min(2, (int)res.rows()); k++) std::printf(" %.6f", res(k) / std::sqrt(S(k, k)));
++        std::printf("\n");
++      }
++    }
+ 
+     // Get our threshold (we precompute up to 500 but handle the case that it is more)
+     double chi2_check;
+--- root/ws_offboard_control/src/open_vins/ov_msckf/src/core/VioManager.cpp	2026-10-07 14:05:18.000000000 +0000
++++ out/cl/day5/ovws/src/open_vins/ov_msckf/src/core/VioManager.cpp	2026-10-08 13:53:36.429828706 +0000
+@@ -47,6 +47,23 @@
+ using namespace ov_type;
+ using namespace ov_msckf;
+ 
++// Day 5 diagnostic (drone_multislam_orb3slam docs/day5, ov_stage_logdet.patch): with OV_STAGE_LOGDET set,
++// print log det of the IMU pose marginal (6x6 [dth dp]) and of its orientation block after each
++// update stage. Default off; no effect on the estimate.
++static void stage_logdet(const std::shared_ptr<ov_msckf::State> &state, const char *stage, size_t n) {
++  static const bool on = std::getenv("OV_STAGE_LOGDET") != nullptr;
++  if (!on)
++    return;
++  std::vector<std::shared_ptr<ov_type::Type>> v{state->_imu->pose()};
++  Eigen::MatrixXd P = ov_msckf::StateHelper::get_marginal_covariance(state, v);
++  P = 0.5 * (P + P.transpose());
++  Eigen::LLT<Eigen::MatrixXd> l6(P), l3(P.block(0, 0, 3, 3)), l2(P.block(0, 0, 2, 2));
++  auto ld = [](const Eigen::LLT<Eigen::MatrixXd> &l) { return 2.0 * l.matrixL().toDenseMatrix().diagonal().array().log().sum(); };
++  std::printf("[STAGE] %.6f %s %.9f %.9f %.9f %zu %zu %zu\n", state->_timestamp, stage, ld(l6), ld(l3), ld(l2), n,
++              state->_features_SLAM.size(), state->_clones_IMU.size());
++}
++
++
+ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
+ 
+   // Nice startup message
+@@ -279,6 +296,16 @@
+ 
+   // Perform our feature tracking!
+   trackFEATS->feed_new_camera(message);
++  {  // day 7 diagnostic (ov_nis.patch): OV_TRK_LOG set -> cam0 tracked features after each tracked frame
++    static const bool trk_on = std::getenv("OV_TRK_LOG") != nullptr;
++    if (trk_on) {
++      auto obs = trackFEATS->get_last_obs();
++      auto ids = trackFEATS->get_last_ids();
++      if (obs.count(0) && ids.count(0))
++        for (size_t k = 0; k < obs.at(0).size() && k < ids.at(0).size(); k++)
++          std::printf("[TRK] %.6f %zu %.4f %.4f\n", message.timestamp, ids.at(0)[k], obs.at(0)[k].pt.x, obs.at(0)[k].pt.y);
++    }
++  }
+   if (ov_core::Printer::current_print_level <= ov_core::Printer::PrintLevel::DEBUG) {
+     // [TRACK] / [GRID] lines: features tracked per camera and cam0 features per
+     // extraction-grid cell, for the phase-3 scene-degradation measurements.
+@@ -364,6 +391,7 @@
+   rT3 = boost::posix_time::microsec_clock::local_time();
+   if (stage_hook)
+     stage_hook("propagated");
++  stage_logdet(state, "propagated", 0);
+ 
+   // If we have not reached max clones, we should just return...
+   // This isn't super ideal, but it keeps the logic after this easier...
+@@ -551,6 +579,7 @@
+   updaterMSCKF->update(state, featsup_MSCKF);
+   if (stage_hook)
+     stage_hook("msckf");
++  stage_logdet(state, "msckf", featsup_MSCKF.size());
+   PRINT_DEBUG("[MSCKF] in=%zu used=%zu\n", msckf_in, featsup_MSCKF.size());
+   propagator->invalidate_cache();
+   rT4 = boost::posix_time::microsec_clock::local_time();
+@@ -574,10 +603,12 @@
+   feats_slam_UPDATE = feats_slam_UPDATE_TEMP;
+   if (stage_hook)
+     stage_hook("slam");
++  stage_logdet(state, "slam", feats_slam_UPDATE.size());
+   rT5 = boost::posix_time::microsec_clock::local_time();
+   updaterSLAM->delayed_init(state, feats_slam_DELAYED);
+   if (stage_hook)
+     stage_hook("init");
++  stage_logdet(state, "init", feats_slam_DELAYED.size());
+   rT6 = boost::posix_time::microsec_clock::local_time();
+ 
+   //===================================================================================
+@@ -627,6 +658,7 @@
+ 
+   // Finally marginalize the oldest clone if needed
+   StateHelper::marginalize_old_clone(state);
++  stage_logdet(state, "post", 0);
+   rT7 = boost::posix_time::microsec_clock::local_time();
+ 
+   //===================================================================================
