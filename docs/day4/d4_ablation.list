@@ -1,0 +1,12 @@
+d4_abl_yaw_1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0
+d4_abl_path_1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0.5
+d4_abl_both_1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d4_abl_none_1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0
+d4_abl_yaw_2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0
+d4_abl_path_2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0.5
+d4_abl_both_2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d4_abl_none_2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0
+d4_abl_yaw_3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0
+d4_abl_path_3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0.5
+d4_abl_both_3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5
+d4_abl_none_3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0

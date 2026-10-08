@@ -117,3 +117,26 @@ Decisions made without the user, each with what / why / alternatives.
 - **Executor home-phase ESDF-guard stall NOT fixed before step 5** (keeps comparability with day 2
   and the protocol); step 5 additionally reports explore-phase-only NEES, defined before running.
 - **Step 5 frontier baseline re-flown** (5 flights) on the current image rather than reusing day-1.
+
+## Day 4 (2026-10-08)
+- **Step 1: GT-pose coverage uses EMULATED depth** (ray cast against the validation scene's GT
+  geometry from GT camera poses): closed-loop bags carry no depth. Emulation validated on two new
+  sensor-recording flights (d4_sens_lam0_{1,2}): emulated and recorded ranges agree to mm where
+  both return; recorded depth inserted at OpenVINS poses reproduces the recorded coverage within 7%.
+  Found: real depth has no-return pixels (2–17% per frame, grazing floor and wall edges) that the
+  mapper inserts as free space to 8 m, carving free space through floor and walls — the recorded
+  metric is 1.8–3.7x the GT-geometry coverage in EVERY flight. Flags therefore split: recorded vs
+  GT (all flights) and OpenVINS-pose vs GT-pose with the same depth (divergence only). Mapper not
+  changed (no rerun of past results; fix belongs to a future step).
+- **Step 2b: replays need images; closed-loop bags have none** -> 2 new diagnostic flights at the worst
+  condition (λ = 0, new set) with RECORD_SENSORS=1 (stereo IR, IMU, depth), replayed with the serial
+  runner at track_frequency 20 (system: every other frame) and 40 (all frames). Replay config lacks the
+  live harness's `init_wait_for_jerk: 0` (both rates alike). Diagonal-covariance NEES (serial runner
+  has no joint-covariance dump), compared with the live flight's diagonal NEES.
+- **Step 3 skipped**: it was conditional on fast yaw. Evidence (2a–2c) points to the opposite: NEES
+  grows in straight translation with little rotation, roll/pitch (not yaw) blows up, full frame rate
+  does not help. A yaw-rate limit would reduce rotation further. Not flown.
+- **Step 4 design**: realized gain exists only for flown candidates, so instead of "a random unchosen
+  candidate" the planner flies a uniformly random scored candidate on 30% of decisions
+  (`random_pick`, diagnostic only, seeds 1–3), λ = 0.01, new set, 3 flights; argmax vs random
+  picks compared on predicted − realized pose gain.

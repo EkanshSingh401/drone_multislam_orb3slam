@@ -1,0 +1,2 @@
+d4_sens_lam0_1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5 RECORD_SENSORS=1
+d4_sens_lam0_2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.5 RECORD_SENSORS=1

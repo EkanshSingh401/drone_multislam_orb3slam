@@ -21,6 +21,7 @@
 #include <sstream>
 #include <atomic>
 #include <chrono>
+#include <random>
 #include <thread>
 
 #include <Eigen/Dense>
@@ -105,7 +106,11 @@ class ExplorationPlanner : public rclcpp::Node {
     yaw_samples_ = declare_parameter("yaw_samples", 1);
     path_spacing_ = declare_parameter("path_spacing", 0.0);
     yaw_rate_ = declare_parameter("yaw_rate", 0.6);  // the executor's yaw rate limit
-    threads_ = declare_parameter("score_threads", 8);  // airborne this long before "done" may be declared
+    threads_ = declare_parameter("score_threads", 8);
+    // Day 4 optimizer's-curse check (diagnostic only): with this probability fly a uniformly
+    // random scored candidate instead of the argmax; logged as "pick":"random".
+    random_pick_ = declare_parameter("random_pick", 0.0);
+    rng_.seed((unsigned)declare_parameter("random_seed", 1));  // airborne this long before "done" may be declared
     const auto esdf_topic = declare_parameter("esdf_topic", std::string("/nvblox_node/static_esdf_pointcloud"));
     sub_odom_ = create_subscription<nav_msgs::msg::Odometry>(
         declare_parameter("odom_topic", std::string("/ov_msckf/odomimu")), 10,
@@ -530,7 +535,14 @@ class ExplorationPlanner : public rclcpp::Node {
         best = (int)i;  // lowest posterior log-det
       }
     }
-    js << "],\"chosen\":" << best << "}";
+    std::string pick = "argmax";
+    if (best >= 0 && random_pick_ > 0 && std::uniform_real_distribution<double>(0, 1)(rng_) < random_pick_) {
+      std::vector<int> ok;
+      for (size_t i = 0; i < cands.size(); ++i)
+        if (type_ == "frontier" || std::isfinite(type_ == "pose_cov" ? cands[i].score_pc : cands[i].score)) ok.push_back((int)i);
+      if (!ok.empty()) { best = ok[std::uniform_int_distribution<size_t>(0, ok.size() - 1)(rng_)]; pick = "random"; }
+    }
+    js << "],\"chosen\":" << best << ",\"pick\":\"" << pick << "\"}";
     std_msgs::msg::String dec;
     dec.data = js.str();
     pub_dec_->publish(dec);
@@ -575,6 +587,8 @@ class ExplorationPlanner : public rclcpp::Node {
   int empty_replans_ = 0, max_attempts_ = 2;
   double lambda_ = 0.1, margin_time_ = 1.0, path_spacing_ = 0.0, yaw_rate_ = 0.6;
   int yaw_samples_ = 1, threads_ = 8;
+  double random_pick_ = 0.0;
+  std::mt19937 rng_;
   active_slam_sim::CoarseMap coarse_{0.25};
   active_slam_sim::FrustumParams frustum_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_coarse_;

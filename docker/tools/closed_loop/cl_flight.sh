@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cl_flight.sh <frontier|ig> <outdir> : one closed-loop exploration flight (PATCHES s64; overnight stages)
 # env: WORLD (validation|forest, default validation), MAX_MISSION (s, default 180),
-#      LAMBDA, YAW_SAMPLES, PATH_SPACING (day 3 candidate set), PLANNER_ARGS (extra "-p k:=v" for the planner, e.g. sigma_virtual),
+#      RECORD_SENSORS=1 (day 4: also record stereo IR, IMU, depth for offline replay), LAMBDA, YAW_SAMPLES, PATH_SPACING (day 3 candidate set), PLANNER_ARGS (extra "-p k:=v" for the planner, e.g. sigma_virtual),
 #      FAULT_MODE (none|dropout|drift|jump), FAULT_T (s after airborne), FAULT_DUR, FAULT_DRIFT, FAULT_JUMP
 set -o pipefail
 TYPE=$1; OD=$2; [[ -e $OD ]] && { echo "exists $OD" >&2; exit 2; }; mkdir -p $OD
@@ -17,7 +17,7 @@ mkdir -p $OD/ov_config && cp /opt/config_sim_only/*.yaml $OD/ov_config/ && echo 
 ros2 bag record -s mcap -o $OD/flight.bag /ground_truth/pose_info /clock /ov_msckf/odomimu /openvins/joint_covariance \
   /exploration_planner/decision /exploration_planner/goal /octomap_mapper/coverage /offboard_executor/log \
   /px4_1/fmu/out/vehicle_local_position_v1 /px4_1/fmu/out/vehicle_status_v1 /px4_1/fmu/out/vehicle_land_detected \
-  /px4_1/fmu/out/failsafe_flags /px4_1/fmu/out/estimator_status_flags /ov_msckf/odomimu_px4 /ov_msckf/odomimu_gated /ov_msckf/points_msckf /ov_msckf/points_slam > $OD/record.log 2>&1 &
+  /px4_1/fmu/out/failsafe_flags /px4_1/fmu/out/estimator_status_flags /ov_msckf/odomimu_px4 /ov_msckf/odomimu_gated /ov_msckf/points_msckf /ov_msckf/points_slam ${RECORD_SENSORS:+/camera/infra1/image_rect_raw /camera/infra2/image_rect_raw /camera/imu /camera/depth/image_rect_raw} > $OD/record.log 2>&1 &
 sleep 3
 /root/ws_offboard_control/install/ov_msckf/lib/ov_msckf/run_subscribe_msckf --ros-args -r __ns:=/ov_msckf \
   -p config_path:=$OD/ov_config/openvins_estimator_config.yaml -p use_sim_time:=true -p verbosity:=INFO \
@@ -31,7 +31,7 @@ ros2 run active_slam_planner openvins_to_px4 --ros-args -p enabled:=true -p odom
 timeout 8 ros2 topic list 2>/dev/null | grep -i land > $OD/land_topics.txt
 sleep 8
 /root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/octomap_mapper --ros-args -p use_sim_time:=true -p slice_height:=1.5 -p max_range:=8.0 > $OD/mapper.log 2>&1 &
-/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/exploration_planner --ros-args -p use_sim_time:=true -p planner_type:=$TYPE -p flight_height:=1.5 ${SIGMA_L:+-p sigma_virtual:=$SIGMA_L} ${LAMBDA:+-p lambda:=$LAMBDA} ${YAW_SAMPLES:+-p yaw_samples:=$YAW_SAMPLES} ${PATH_SPACING:+-p path_spacing:=$PATH_SPACING} ${PLANNER_ARGS:-} > $OD/planner.log 2>&1 &
+/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/exploration_planner --ros-args -p use_sim_time:=true -p planner_type:=$TYPE -p flight_height:=1.5 ${SIGMA_L:+-p sigma_virtual:=$SIGMA_L} ${LAMBDA:+-p lambda:=$LAMBDA} ${YAW_SAMPLES:+-p yaw_samples:=$YAW_SAMPLES} ${PATH_SPACING:+-p path_spacing:=$PATH_SPACING} ${RANDOM_PICK:+-p random_pick:=$RANDOM_PICK -p random_seed:=${RANDOM_SEED:-1}} ${PLANNER_ARGS:-} > $OD/planner.log 2>&1 &
 python3 /out/cl/gt_watchdog.py ${WORLD:-validation} > $OD/watchdog.log 2>&1 &
 sleep 2
 timeout 900 python3 ${EXECUTOR:-/root/ws_offboard_control/install/active_slam_sim/lib/active_slam_sim/offboard_executor.py} --ros-args -p flight_height:=1.5 -p max_mission_s:=${MAX_MISSION:-180.0} > $OD/executor.log 2>&1
