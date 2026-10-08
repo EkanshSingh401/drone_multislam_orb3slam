@@ -483,7 +483,8 @@ class ExplorationPlanner : public rclcpp::Node {
         for (auto& kv : by) {
           std::vector<asi::PredictedMeasurement> tr; std::vector<double> fr;
           int prev_k = -2;
-          auto flush = [&]() { if (!tr.empty()) Jr += active_slam_sim::information_random_walk(tr, n, rw_sigma0_, rw_q2_, fr); tr.clear(); fr.clear(); };
+          const double k_px = 1.0 / P.cameras[kv.first.second].fx;  // px -> normalized (day 9 units fix)
+          auto flush = [&]() { if (!tr.empty()) Jr += active_slam_sim::information_random_walk(tr, n, rw_sigma0_, rw_q2_, fr, k_px); tr.clear(); fr.clear(); };
           for (size_t i : kv.second) {
             const int k = key_real[i][2];
             if (k != prev_k + 1) flush();

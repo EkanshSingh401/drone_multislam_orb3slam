@@ -191,6 +191,31 @@ int main() {
     std::printf("random walk Monte Carlo: |C - P| / |P| = %.3f (M = %d)\n", mc, M);
     CHECK(mc < 0.05, "Monte Carlo covariance disagrees with (J + I)^-1 (%g)", mc);
   }
+  // --- day 9: stereo random walk vs brute force ---
+  {
+    const int n = 14, K = 6; const double s0 = 0.4, sd = 0.1, q2 = 0.03, rho = 0.95; const std::vector<double> fr{1, 3, 3, 2, 3, 1};
+    std::vector<asi::PredictedMeasurement> c0, c1; MatrixXd H = MatrixXd::Zero(4 * K, n);
+    for (int k = 0; k < K; ++k)
+      for (int c = 0; c < 2; ++c) {
+        asi::PredictedMeasurement pm; MatrixXd Jc = randn(2, 6), Jl = randn(2, 3);
+        pm.blocks.push_back({2 + (k % 2) * 3, Jc}); pm.blocks.push_back({11, Jl});
+        (c ? c1 : c0).push_back(pm);
+        // row order: sample k, camera c, axis a -> 4k + 2c + a
+        H.block(4 * k + 2 * c, 2 + (k % 2) * 3, 2, 6) += Jc; H.block(4 * k + 2 * c, 11, 2, 3) += Jl;
+      }
+    std::vector<double> cum(K, 0.0); for (int k = 1; k < K; ++k) cum[k] = cum[k - 1] + fr[k];
+    MatrixXd Se = MatrixXd::Zero(4 * K, 4 * K);
+    for (int i = 0; i < K; ++i) for (int j = 0; j < K; ++j) for (int ci = 0; ci < 2; ++ci) for (int cj = 0; cj < 2; ++cj) for (int a = 0; a < 2; ++a) {
+      const double first = (ci == cj) ? s0 * s0 : s0 * s0 - sd * sd / 2;
+      const double walk = q2 * cum[std::min(i, j)] * (ci == cj ? 1.0 : rho);
+      Se(4 * i + 2 * ci + a, 4 * j + 2 * cj + a) = first + walk;
+    }
+    const MatrixXd Jbf = H.transpose() * Se.ldlt().solve(H);
+    const MatrixXd Js = information_random_walk_stereo(c0, c1, n, s0, sd, q2, rho, fr);
+    const double rel = (Jbf - Js).norm() / Jbf.norm();
+    std::printf("stereo random walk info vs brute force: rel err %.2e\n", rel);
+    CHECK(rel < 1e-9, "stereo random-walk information differs from brute force (%g)", rel);
+  }
   std::printf("%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;
 }

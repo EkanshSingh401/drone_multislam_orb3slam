@@ -9,7 +9,7 @@
 //           Schur complement with a 10 m prior
 // Output per task: sqrt of the relative position covariance trace (m) and the relative yaw sigma (rad)
 // between the first and last clone, for model white (sigma 1 px, the filter's value) and random_walk.
-// Usage: drift_model <tasks.txt> <s0_px>
+// Usage: drift_model <tasks.txt> <s0_px> [rho sd_px]  (day 9: model 2 = stereo random walk, rho / sd from training)
 // tasks.txt:  TASK <id> <jc.cdr>   WP <t rel> x y z qx qy qz qw   TRK x y z q2 n k1 f1 k2 f2 ...   END
 //   (k = waypoint index, f = camera frames since the previous sample of this track; f of the first = 1)
 //   day 9 (stereo): "TRKC <cam> x y z q2 n k1 f1 ..." gives a track in camera <cam>; consecutive TRKC lines
@@ -17,7 +17,9 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -62,6 +64,7 @@ static active_slam_msgs::msg::JointCovariance load_cdr(const std::string& path) 
 int main(int argc, char** argv) {
   if (argc < 3) { std::cerr << "usage: drift_model tasks.txt s0_px\n"; return 2; }
   const double s0 = std::stod(argv[2]);
+  const double rho = argc > 3 ? std::stod(argv[3]) : 0.97, sdisp = argc > 4 ? std::stod(argv[4]) : 0.10;
   std::ifstream in(argv[1]); std::vector<Task> tasks; std::string line;
   while (std::getline(in, line)) {
     std::istringstream s(line); std::string k; s >> k;
@@ -114,7 +117,7 @@ int main(int argc, char** argv) {
     const auto PP = active_slam_sim::build_path_prior(S0, 0, times, pf);
     const int n = (int)PP.S.rows();
     const int L = n;  // landmark placeholder columns appended per track (3)
-    for (int model = 0; model < 2; ++model) {
+    for (int model = 0; model < 3; ++model) {
       MatrixXd J = MatrixXd::Zero(n, n);
       int used = 0;
       MatrixXd Jt = MatrixXd::Zero(n + 3, n + 3); int nm_lm = 0;
@@ -126,26 +129,59 @@ int main(int argc, char** argv) {
         }
         Jt.setZero(); nm_lm = 0;
       };
+      // per landmark: gather each camera's samples (waypoint -> measurement, frames), then build its information
+      struct CamS { std::map<int, asi::PredictedMeasurement> pm; std::map<int, double> fr; double q2 = 0, kpx = 1.0; };
+      std::vector<CamS> cams(2);
+      auto flush_lm = [&]() {
+        auto add_mono = [&](const std::map<int, asi::PredictedMeasurement>& pmm, const CamS& cs, const std::set<int>* skip) {
+          std::vector<asi::PredictedMeasurement> seg; std::vector<double> fr; int prev = -2;
+          auto out = [&]() {
+            if (seg.empty()) return;
+            nm_lm += (int)seg.size();
+            if (model == 0) Jt += active_slam_sim::information(seg, n + 3);
+            else Jt += active_slam_sim::information_random_walk(seg, n + 3, s0, cs.q2, fr, cs.kpx);
+            seg.clear(); fr.clear();
+          };
+          for (auto& kv : pmm) {
+            if (skip && skip->count(kv.first)) { out(); prev = -2; continue; }
+            if (kv.first != prev + 1) out();
+            fr.push_back(seg.empty() ? 1.0 : cs.fr.at(kv.first)); seg.push_back(kv.second); prev = kv.first;
+          }
+          out();
+        };
+        if (model == 2) {
+          // common samples -> stereo segments; the rest mono
+          std::set<int> common;
+          for (auto& kv : cams[0].pm) if (cams[1].pm.count(kv.first)) common.insert(kv.first);
+          std::vector<asi::PredictedMeasurement> s0v, s1v; std::vector<double> fr; int prev = -2;
+          auto out = [&]() {
+            if (!s0v.empty()) { nm_lm += 2 * (int)s0v.size(); Jt += active_slam_sim::information_random_walk_stereo(s0v, s1v, n + 3, s0, sdisp, 0.5 * (cams[0].q2 + cams[1].q2), rho, fr, cams[0].kpx); }
+            s0v.clear(); s1v.clear(); fr.clear();
+          };
+          for (int k : common) {
+            if (k != prev + 1) out();
+            fr.push_back(s0v.empty() ? 1.0 : cams[0].fr.at(k)); s0v.push_back(cams[0].pm.at(k)); s1v.push_back(cams[1].pm.at(k)); prev = k;
+          }
+          out();
+          add_mono(cams[0].pm, cams[0], &common); add_mono(cams[1].pm, cams[1], &common);
+        } else {
+          add_mono(cams[0].pm, cams[0], nullptr); add_mono(cams[1].pm, cams[1], nullptr);
+        }
+        for (auto& c : cams) { c.pm.clear(); c.fr.clear(); }
+        schur();
+      };
       for (const auto& t : T.trk) {
-        if (!t.join) schur();
+        if (!t.join) flush_lm();
         asi::LandmarkLinearization lm; lm.is_virtual = true; lm.p_FinG = t.p; lm.rep = {{L, Eigen::Matrix3d::Identity()}};
-        std::vector<asi::PredictedMeasurement> ms; std::vector<double> fr; int prev = -2;
-        std::vector<std::vector<asi::PredictedMeasurement>> segs; std::vector<std::vector<double>> segf;
-        const auto& camm = P.cameras[std::min<size_t>(t.cam, P.cameras.size() - 1)];
+        const int c = std::min<int>(t.cam, (int)P.cameras.size() - 1);
+        cams[c].q2 = t.q2; cams[c].kpx = 1.0 / P.cameras[c].fx;
         for (size_t i = 0; i < t.k.size(); ++i) {
           asi::PredictedMeasurement pm;
-          if (!asi::predict_measurement(P.current, T.W[t.k[i]].pose, PP.clone_cols[t.k[i]], camm, lm, noise, nullptr, &pm)) { prev = -2; continue; }
-          if (t.k[i] != prev + 1 && !ms.empty()) { segs.push_back(ms); segf.push_back(fr); ms.clear(); fr.clear(); }
-          fr.push_back(ms.empty() ? 1.0 : t.f[i]); ms.push_back(pm); prev = t.k[i];
-        }
-        if (!ms.empty()) { segs.push_back(ms); segf.push_back(fr); }
-        for (size_t si = 0; si < segs.size(); ++si) {
-          nm_lm += (int)segs[si].size();
-          if (model == 0) Jt += active_slam_sim::information(segs[si], n + 3);
-          else Jt += active_slam_sim::information_random_walk(segs[si], n + 3, s0, t.q2, segf[si]);
+          if (!asi::predict_measurement(P.current, T.W[t.k[i]].pose, PP.clone_cols[t.k[i]], P.cameras[c], lm, noise, nullptr, &pm)) continue;
+          cams[c].pm[t.k[i]] = pm; cams[c].fr[t.k[i]] = t.f[i];
         }
       }
-      schur();
+      flush_lm();
       const MatrixXd Sp = (MatrixXd::Identity(n, n) + PP.S * J).partialPivLu().solve(PP.S);
       const int c0 = PP.clone_cols.front(), c1 = PP.clone_cols.back();
       MatrixXd D = MatrixXd::Zero(6, n); D.block(0, c1, 6, 6).setIdentity(); D.block(0, c0, 6, 6) -= MatrixXd::Identity(6, 6);
@@ -154,7 +190,7 @@ int main(int argc, char** argv) {
       const Vector3d gI = P.current.R_GtoI * Vector3d(0, 0, 1);
       const double syaw = std::sqrt(std::max(0.0, (double)(gI.transpose() * C.block(0, 0, 3, 3) * gI)));
       const double spos = std::sqrt(std::max(0.0, C.block(3, 3, 3, 3).trace()));
-      std::cout << "DRIFT " << T.id << " " << (model == 0 ? "white" : "random_walk") << " " << spos << " " << syaw << " " << used << "\n";
+      std::cout << "DRIFT " << T.id << " " << (model == 0 ? "white" : (model == 1 ? "random_walk" : "random_walk_stereo")) << " " << spos << " " << syaw << " " << used << "\n";
     }
   }
   return 0;

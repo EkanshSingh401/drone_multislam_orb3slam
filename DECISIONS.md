@@ -328,3 +328,11 @@ Decisions made without the user, each with what / why / alternatives.
 - **Step 2 training scenes** `texlevels_a`, `texlevels_b`: the VALIDATION geometry (not the office layouts)
   with each surface's texture contrast scaled to 1 / 0.3 / 0.1 / 0.03 / 0 (0 = ±1 grey-level noise, like
   office_plain's plain walls), two permutations so a level is not tied to a surface. Training only.
+- **Units bug (found today, fixed)**: `information_random_walk` received s0 / q2 in pixels while the predictor's
+  Jacobians are in normalized image coordinates (asi sets pm.sigma = sigma_px / f). Both random-walk
+  functions now take px_to_meas = 1/f (planner and drift_model pass 1/fx). All day-8 random-walk
+  results (step 4 ranking 0.48 / 0.42, "level 48x too high") are superseded by day 9 step 1.
+- **Stereo error model**: cam0/cam1 KLT errors drift together (training replays: increment correlation
+  0.3–0.7 per frame, disparity error 0.08 → 0.10 px over 20 frames). Joint model fitted on the 14 training
+  replays: rho = 0.97 (0.95–0.98), first-sample disparity spread sd = 0.10 px; exact differenced
+  information `information_random_walk_stereo` (brute force 2.4e-14).

@@ -172,8 +172,11 @@ inline Eigen::MatrixXd information(const std::vector<asi::PredictedMeasurement>&
 //   J = H_0^T H_0 / s0^2 + sum_k (H_k - H_(k-1))^T (H_k - H_(k-1)) / (q2 frames_k).
 // `track` holds the samples in time order (each a PredictedMeasurement, blocks at state columns,
 // pm.sigma ignored). With the white model the same track gives sum_k H_k^T H_k / sigma^2.
+// UNITS (day 9 fix): the Jacobians of asi::predict_measurement are in normalized image coordinates; s0 (px) and
+// q2 (px^2) are scaled by px_to_meas = 1 / f (resp. its square). Day 8 called this without the scale.
 inline Eigen::MatrixXd information_random_walk(const std::vector<asi::PredictedMeasurement>& track, int n, double s0,
-                                               double q2, const std::vector<double>& frames) {
+                                               double q2, const std::vector<double>& frames, double px_to_meas = 1.0) {
+  s0 *= px_to_meas; q2 *= px_to_meas * px_to_meas;
   Eigen::MatrixXd J = Eigen::MatrixXd::Zero(n, n);
   for (size_t k = 0; k < track.size(); ++k) {
     std::vector<asi::JacobianBlock> blocks = track[k].blocks;
@@ -186,6 +189,39 @@ inline Eigen::MatrixXd information_random_walk(const std::vector<asi::PredictedM
     for (const auto& bi : blocks)
       for (const auto& bj : blocks)
         J.block(bi.col, bj.col, bi.J.cols(), bj.J.cols()).noalias() += w * bi.J.transpose() * bj.J;
+  }
+  return J;
+}
+
+// Day 9: STEREO random walk. One landmark seen by cam0 and cam1 at the same samples; per image axis the two
+// cameras' errors are jointly Gaussian: first sample Cov = [[s0^2, s0^2 - sd^2/2], [., s0^2]] (sd = disparity
+// spread), increments over m frames Cov = q2 m [[1, rho], [rho, 1]] (rho ~ 1: the cameras' KLT errors drift
+// together, the disparity error barely grows). Differencing whitens the time correlation exactly, so
+// J = sum_k sum_axis [r0 r1]_k^T C_k^-1 [r0 r1]_k with r_c = the (differenced) row of camera c on that axis.
+// `c0`, `c1`: the samples of each camera, same length, same sample times.
+inline Eigen::MatrixXd information_random_walk_stereo(const std::vector<asi::PredictedMeasurement>& c0,
+                                                      const std::vector<asi::PredictedMeasurement>& c1, int n, double s0,
+                                                      double sd, double q2, double rho, const std::vector<double>& frames,
+                                                      double px_to_meas = 1.0) {
+  s0 *= px_to_meas; sd *= px_to_meas; q2 *= px_to_meas * px_to_meas;
+  Eigen::MatrixXd J = Eigen::MatrixXd::Zero(n, n);
+  auto diff_blocks = [](const std::vector<asi::PredictedMeasurement>& v, size_t k) {
+    std::vector<asi::JacobianBlock> b = v[k].blocks;
+    if (k > 0) for (auto x : v[k - 1].blocks) { x.J = -x.J; b.push_back(x); }
+    return b;
+  };
+  for (size_t k = 0; k < c0.size(); ++k) {
+    Eigen::Matrix2d C;
+    if (k == 0) C << s0 * s0, s0 * s0 - sd * sd / 2, s0 * s0 - sd * sd / 2, s0 * s0;
+    else { const double m = std::max(1.0, k < frames.size() ? frames[k] : 1.0); C << 1.0, rho, rho, 1.0; C *= q2 * m; }
+    const Eigen::Matrix2d Wm = C.inverse();
+    const std::vector<asi::JacobianBlock> B[2] = {diff_blocks(c0, k), diff_blocks(c1, k)};
+    for (int a = 0; a < 2; ++a)
+      for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+          for (const auto& bi : B[i])
+            for (const auto& bj : B[j])
+              J.block(bi.col, bj.col, bi.J.cols(), bj.J.cols()).noalias() += Wm(i, j) * bi.J.row(a).transpose() * bj.J.row(a);
   }
   return J;
 }
