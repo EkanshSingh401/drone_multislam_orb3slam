@@ -402,8 +402,7 @@ Later / noted, not started:
 - **Day 6 (REPORT_2026-10-09.md, DECISIONS "Day 6", PATCHES §75):** executor defaults: no slow in-place yaw
   (`turn_deadband` 0.3 rad, full-rate turns), ARM by elapsed time (old tick test never sent ARM at RTF ~1),
   baro height reference (`PX4_HGT_REF`, default 0) with executor height-offset correction, latched landing
-  hold, PX4 ground-contact / local-height disarm. Final executor logic currently only in
-  `/out/cl/day6/offboard_executor.py` + repo; **rebuild the image** before relying on the image copy.
+  hold, PX4 ground-contact / local-height disarm. Final executor logic is in the image (rebuilt at the end of day 6).
   `office_plain` world (feature-poor). EuRoC on disk (`/out/euroc`, fetch via DSpace API; rate-limited).
   Step-4 drift tool `day6/drift_windows.py`.
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
