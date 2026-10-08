@@ -225,3 +225,8 @@ Decisions made without the user, each with what / why / alternatives.
   system frame rate) but adopted no fix, so orientation NEES is not back to frontier-like ~4 for the
   pose-objective planners; comparing planners in the office on an estimator known to be overconfident
   in exactly the slow-motion regime those planners induce would not be interpretable.
+- **Step 4c extra tests (after the main ones)**: mild image degradation (overnight module), half-pixel
+  principal point (OV_CXCY), descriptor tracker (use_klt false) — all offline replays of the scripted
+  flights, diagnostics only. Chosen to separate "noise-free renders" from "systematic correlated
+  projection error"; results in the report.
+- **Step 5 replication flights** used yaw_samples 1 (user: yaw sampling off by default), path 0.5, λ 0.01.
