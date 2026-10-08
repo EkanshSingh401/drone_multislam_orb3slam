@@ -381,11 +381,24 @@ Later / noted, not started:
   (use `day4/gt_coverage.py` GT-geometry coverage on validation flights); NEES blow-up of the new
   set is caused by yaw sampling (low rotation -> roll/pitch over-confident); pose-gain prediction does
   not track realized covariance at goal scale (optimizer's curse shown with `random_pick`).
-- **Day 5 (REPORT_2026-10-08.md, DECISIONS "Day 5", in progress):** step 1 done — executor
-  `guard_timeout_s` (10 s) lands in place after a continuous home-phase ESDF hold; `cl_flight.sh`
-  takes `EXECUTOR_ARGS`. Step 2: mapper `no_return_as_free` (default false = unknown). Step 3b: office
-  scene (`gen_office_world.py`, geometry in `docker/tools/closed_loop/scenes.py`, `WORLD=office`).
+- **Day 5 (REPORT_2026-10-08.md, DECISIONS "Day 5", PATCHES §74):** (1) executor `guard_timeout_s`
+  (10 s) lands in place after a continuous home-phase ESDF hold. (2) mapper `no_return_as_free`
+  (default false): recorded coverage now within 3% of GT-pose coverage at 180 s; GT coverage tool
+  `docker/tools/closed_loop/day5/gt_coverage.py <dir> <world>` (no-return = unknown, curve metrics
+  t50/t90/AUC vs `scenes.reachable_m3`); flight_summary carries `gt_metrics`. (3) office scene
+  (`gen_office_world.py`, geometry `docker/tools/closed_loop/scenes.py`, `WORLD=office GEOFENCE=40.0`):
+  frontier covers 23–26% in 180 s. (4) IMU params match (in-flight check); roll/pitch overconfidence
+  in slow flight is caused by the sim's VISION inputs (correlated per-frame tracking errors on
+  noise-free renders): OpenVINS's own simulator on the same trajectories is consistent; 5 Hz tracking
+  removes it (diagnostic only). Slow in-place rotation (0.05 rad/s) made live OpenVINS drift and jump
+  in 3/3 scripted flights (gate/watchdog). (5) Predictor ladder (`gain_ladder`, built in the image):
+  one-step prediction matches OpenVINS, multi-step from one snapshot over-counts ~2x by 1 s, worst
+  under rotation; realized pose information is an equilibrium (SLAM 89%, MSCKF 9%). Step 6 skipped.
+  Tools: scripted flights `TYPE=script` (`script_goals.py`), stage-logdet patch for a scratch OpenVINS
+  build (`day5/ov_stage_logdet.patch`, `/out/cl/day5/ovws`), OpenVINS-simulator runs on flight GT
+  (`day5/run_ovsim.sh`, `make_traj.py`, `sim_nees.py`).
   **Pass doubles as `40.0`, never `40`** in env/params (int -> InvalidParameterTypeException).
+  **Do not pause run_batch by killing it mid-bringup** (orphaned imu_restamp -> duplicate /camera/imu).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover
