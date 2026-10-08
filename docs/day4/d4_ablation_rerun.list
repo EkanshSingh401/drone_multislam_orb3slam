@@ -1,0 +1,6 @@
+d4_abl_yaw_r1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.0
+d4_abl_none_r1 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0.0
+d4_abl_yaw_r2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.0
+d4_abl_none_r2 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0.0
+d4_abl_yaw_r3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=8 PATH_SPACING=0.0
+d4_abl_none_r3 pose_cov validation LAMBDA=0.0 YAW_SAMPLES=1 PATH_SPACING=0.0

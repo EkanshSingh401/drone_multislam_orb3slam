@@ -140,3 +140,8 @@ Decisions made without the user, each with what / why / alternatives.
   candidate" the planner flies a uniformly random scored candidate on 30% of decisions
   (`random_pick`, diagnostic only, seeds 1–3), λ = 0.01, new set, 3 flights; argmax vs random
   picks compared on predicted − realized pose gain.
+- **Ablation: 6 flights invalid** (`PATH_SPACING=0` reached ROS as an integer; the planner threw
+  InvalidParameterTypeException at startup and the vehicle only hovered). Excluded and re-flown as
+  `d4_abl_{none,yaw}_r{1,2,3}` with `0.0`. Configuration error, not a flight failure.
+- **Step 4 realized gain = log det change of OpenVINS's own IMU pose covariance** decision -> arrival
+  (agreement with the filter's belief, as in §61); goals not reached before the next decision skipped.

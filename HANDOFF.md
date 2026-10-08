@@ -377,6 +377,10 @@ Later / noted, not started:
   new pose_cov candidate set `yaw_samples`/`path_spacing` (old = 1 / 0); NEES jump at λ ≥ 1 is the
   home phase (ESDF-guard hover stalls, no timeout; low yaw rate), not exploration. Step-5 run:
   `docs/day3/d3_step5.list` → results in `docs/day3/` (§72): new set → NEES 19–41 (low yaw rate).
+- **Day 4 (§73):** recorded coverage is inflated 1.8–3.7x by the mapper's no-return-as-free handling
+  (use `day4/gt_coverage.py` GT-geometry coverage on validation flights); NEES blow-up of the new
+  set is caused by yaw sampling (low rotation -> roll/pitch over-confident); pose-gain prediction does
+  not track realized covariance at goal scale (optimizer's curse shown with `random_pick`).
 - Gravity 9.80 vs 9.81 (§53): no ATE effect (sub-mm, sign flips between sets);
   scale +0.0005 consistently -- negligible.
 - **ZUPT disabled** (`try_zupt: false`): disparity gating fires during hover

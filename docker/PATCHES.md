@@ -3198,3 +3198,14 @@ explains it (cf. §58 slow segments). Estimator unchanged.
 `d3_step5_table.md`, plot `d3_step5_tradeoff.png`). Coverage rises and ATE rises with λ; orientation
 NEES 19–41 (window mean) at every λ vs frontier 4.3; explore yaw rate 0.07–0.15 rad/s vs 0.3–0.55.
 Step 4 replicated (yaw rate ρ −0.72). Failures: 0 in-air, 0 contacts, 1 frontier arm failure.
+
+## 73. Day 4: GT-geometry coverage, NEES blow-up cause, optimizer's curse
+
+Coverage: emulated depth vs GT geometry (`docker/tools/closed_loop/day4/gt_coverage.py`, validated with
+recorded depth on 2 sensor flights). The mapper turns no-return depth pixels into free space to 8 m ->
+recorded coverage 1.8–3.7x GT in all flights; divergence outliers d2_lam0.1_3, d3_frontier_4. Table
+`docs/day4/coverage_table.md`. NEES: roll/pitch (not yaw) over-confident; growth in straight
+translation, not turn-in-place; full-rate replay worse; ablation (`docs/day4/ablation_table.md`): yaw
+sampling causes low rotation and NEES 8.6–16.9 vs 2.1–2.8. Step 3 not run. Optimizer's curse
+(`random_pick`): argmax goals over-predicted by 3.05 nats vs random −1.69 (p 7e-9); prediction vs
+realized at goal scale uncorrelated (ρ 0.04).
