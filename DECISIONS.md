@@ -190,3 +190,27 @@ Decisions made without the user, each with what / why / alternatives.
   Used a diagnostic patch (`day5/ov_stage_logdet.patch`, env OV_STAGE_LOGDET, default off, prints pose
   log det after propagate / MSCKF / SLAM / init / marginalization) in a SCRATCH build of ov_msckf
   (`/out/cl/day5/ovws`), run only in offline serial replays. The pinned fork is unchanged.
+- **Step 3b office check flights**: d5_office_frontier_2 failed to arm (PX4 arming flake; counted as a
+  failure, no data). Two office frontier flights appended (_4, _5) so the saturation check rests on ≥ 3
+  flights; this is a check of the scene, not a planner comparison, so adding flights is not "re-flying
+  to replace a failure" in a comparison.
+- **Step 4a**: OpenVINS's loaded parameters read from its startup print (= config). Empirical check of
+  what the sim generates = a 15-min static recording (Allan deviation vs a synthetic reference with
+  the same stamps and gz-sensors' recursion at the configured densities). The in-flight IMU-vs-GT
+  residual tool (s54) was run but is dominated by GT stamp artifacts (as §54 found) -> not used as
+  evidence.
+- **Step 4b scripted flights**: new `script_goals.py` (TYPE=script) replaces the planner with a moving
+  goal: hover 20 s, square of straight legs at 0.3 m/s with heading held, hover, in-place rotation at
+  0.05 / 0.15 / 0.4 rad/s, hovers between. Offline serial replay (system setting, every other frame) +
+  JC dump -> full-covariance roll/pitch/yaw NEES per sample, binned by GT angular rate and by segment.
+  "After fix" replays only if 4a finds a mismatch.
+- **Step 4c**: the §54 swap test (GT-synthesized IMU) is inconclusive on these flights: the GT-spline IMU
+  differs from the real accelerometer by MAD 0.04–0.10 m/s² (> the 0.028 white noise), so it carries
+  its own error. Used instead: OpenVINS's own simulator (`run_simulation`) driven by the flights' GT
+  trajectories (20 Hz, 0.25 s smoothing), with our estimator config, rig calibration and IMU noise;
+  ideal features 2–6 m, camera 15 Hz, IMU 200 Hz. This isolates the filter (FEJ, bias/gravity
+  coupling, init) from our sim's sensor generation.
+- **CPU discipline**: d5_lowrot_1 lost track in flight (GT drifted 0.7 m while OpenVINS held still,
+  watchdog cut the motors at 1.6 m) while I was running heavy offline jobs in the same container.
+  OpenVINS showed no processing lag (3 ms behind), so starvation is not indicated, but from here on no
+  heavy offline jobs run during flights. The flight is kept and reported (failures count).
