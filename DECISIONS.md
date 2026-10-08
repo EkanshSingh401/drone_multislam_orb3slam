@@ -164,3 +164,29 @@ Decisions made without the user, each with what / why / alternatives.
 - **Step 2, mapper**: no-return depth pixels are SKIPPED (unknown), param `no_return_as_free`
   (default false; true = old behaviour). Valid returns beyond max_range (8 m) are still free up to
   8 m (octomap max-range truncation, as nvblox's max integration distance).
+- **Step 2, GT-pose coverage definition updated to match**: `day5/gt_coverage.py` (from day 4) treats
+  rays with no hit within the depth camera's 20 m far clip as unknown (the room has no ceiling: sky
+  rays). Checked on d4_sens_lam0_1 (recorded depth images available): old rule reproduces day 4
+  exactly (225.6 m³); new rule emulated 155.9 vs recorded-depth-at-GT-poses 157.3 m³ (1%). "Recorded vs
+  GT" compares /octomap_mapper/coverage with the GT-pose map (unclipped); flight summaries now carry
+  GT-pose coverage (envelope-clipped) and the curve metrics.
+- **Step 3a metric definitions (a priori)**: reachable volume = scene envelope (inside outer walls,
+  below wall tops) minus solids (`scenes.reachable_m3`: validation 373 m³, office 2247 m³); coverage
+  fraction = GT-pose known volume clipped to the envelope / reachable; t50/t90 = first time ≥ 50/90%
+  (None if never); AUC = mean fraction over [0, 180] s, last value carried forward. Computed on GT-pose
+  coverage, not the recorded stream.
+- **Step 3b office scene**: 30 x 20 m, 4 m walls, no ceiling, 3.5 m corridor + 6 rooms, 3 m doorways
+  (planner path margin at cruise = 1.3 m), 15 furniture boxes; textures/lighting as validation. Geometry
+  in `scenes.py` (one source for generator, coverage, clearance, watchdog box). Executor geofence for
+  the office: `GEOFENCE=40.0` (default 8 m would end exploration in the first room).
+- **Step 5 method**: ladder computed INSIDE the planner's model (new tool `gain_ladder`, same functions
+  as `score_path`), so rungs differ only in inputs (planned vs flown path, landmark persistence,
+  waypoint density, used features). Gate: rung `plan_real` must equal the logged dI_prop + dI_meas_real.
+  MSCKF features enter by a per-feature Schur complement onto the observing clones (null-space
+  equivalent), observing clones = sliding window (11 clones) before the publish time of
+  /ov_msckf/points_msckf, FOV-tested. New SLAM landmarks: 10 m prior, observed from one window before
+  first appearance until last appearance. Propagation in every rung: the planner's static model.
+- **Step 5b realized split**: needs per-stage covariance; JC topic is post-only and throttled in flight.
+  Used a diagnostic patch (`day5/ov_stage_logdet.patch`, env OV_STAGE_LOGDET, default off, prints pose
+  log det after propagate / MSCKF / SLAM / init / marginalization) in a SCRATCH build of ov_msckf
+  (`/out/cl/day5/ovws`), run only in offline serial replays. The pinned fork is unchanged.

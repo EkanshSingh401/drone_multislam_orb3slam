@@ -1,0 +1,65 @@
+diff --git a/ov_msckf/src/core/VioManager.cpp b/ov_msckf/src/core/VioManager.cpp
+index 0d98a88..5609722 100644
+--- a/ov_msckf/src/core/VioManager.cpp
++++ b/ov_msckf/src/core/VioManager.cpp
+@@ -47,6 +47,23 @@ using namespace ov_core;
+ using namespace ov_type;
+ using namespace ov_msckf;
+ 
++// Day 5 diagnostic (drone_multislam_orb3slam docs/day5, ov_stage_logdet.patch): with OV_STAGE_LOGDET set,
++// print log det of the IMU pose marginal (6x6 [dth dp]) and of its orientation block after each
++// update stage. Default off; no effect on the estimate.
++static void stage_logdet(const std::shared_ptr<ov_msckf::State> &state, const char *stage, size_t n) {
++  static const bool on = std::getenv("OV_STAGE_LOGDET") != nullptr;
++  if (!on)
++    return;
++  std::vector<std::shared_ptr<ov_type::Type>> v{state->_imu->pose()};
++  Eigen::MatrixXd P = ov_msckf::StateHelper::get_marginal_covariance(state, v);
++  P = 0.5 * (P + P.transpose());
++  Eigen::LLT<Eigen::MatrixXd> l6(P), l3(P.block(0, 0, 3, 3)), l2(P.block(0, 0, 2, 2));
++  auto ld = [](const Eigen::LLT<Eigen::MatrixXd> &l) { return 2.0 * l.matrixL().toDenseMatrix().diagonal().array().log().sum(); };
++  std::printf("[STAGE] %.6f %s %.9f %.9f %.9f %zu %zu %zu\n", state->_timestamp, stage, ld(l6), ld(l3), ld(l2), n,
++              state->_features_SLAM.size(), state->_clones_IMU.size());
++}
++
++
+ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
+ 
+   // Nice startup message
+@@ -364,6 +381,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
+   rT3 = boost::posix_time::microsec_clock::local_time();
+   if (stage_hook)
+     stage_hook("propagated");
++  stage_logdet(state, "propagated", 0);
+ 
+   // If we have not reached max clones, we should just return...
+   // This isn't super ideal, but it keeps the logic after this easier...
+@@ -551,6 +569,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
+   updaterMSCKF->update(state, featsup_MSCKF);
+   if (stage_hook)
+     stage_hook("msckf");
++  stage_logdet(state, "msckf", featsup_MSCKF.size());
+   PRINT_DEBUG("[MSCKF] in=%zu used=%zu\n", msckf_in, featsup_MSCKF.size());
+   propagator->invalidate_cache();
+   rT4 = boost::posix_time::microsec_clock::local_time();
+@@ -574,10 +593,12 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
+   feats_slam_UPDATE = feats_slam_UPDATE_TEMP;
+   if (stage_hook)
+     stage_hook("slam");
++  stage_logdet(state, "slam", feats_slam_UPDATE.size());
+   rT5 = boost::posix_time::microsec_clock::local_time();
+   updaterSLAM->delayed_init(state, feats_slam_DELAYED);
+   if (stage_hook)
+     stage_hook("init");
++  stage_logdet(state, "init", feats_slam_DELAYED.size());
+   rT6 = boost::posix_time::microsec_clock::local_time();
+ 
+   //===================================================================================
+@@ -627,6 +648,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
+ 
+   // Finally marginalize the oldest clone if needed
+   StateHelper::marginalize_old_clone(state);
++  stage_logdet(state, "post", 0);
+   rT7 = boost::posix_time::microsec_clock::local_time();
+ 
+   //===================================================================================

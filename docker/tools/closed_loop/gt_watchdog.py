@@ -17,7 +17,8 @@ class W(Node):
         q = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, durability=DurabilityPolicy.TRANSIENT_LOCAL, history=HistoryPolicy.KEEP_LAST, depth=5)
         s.max_err = 1.0
         # scene interior x, x, y, y, zmax (Gazebo): validation walls; forest = generous box around the flight area
-        s.box = (-3.6, 5.1, -5.1, 5.1, 3.5) if (sys.argv[1:] or ["validation"])[0] != "forest" else (-15.0, 15.0, -15.0, 15.0, 5.0)
+        w = (sys.argv[1:] or ["validation"])[0]   # office: scenes.py OFFICE envelope minus 0.4 m (day 5)
+        s.box = {"forest": (-15.0, 15.0, -15.0, 15.0, 5.0), "office": (-3.6, 25.6, -9.6, 9.6, 3.5)}.get(w, (-3.6, 5.1, -5.1, 5.1, 3.5))
         s.gt = None; s.ov = None; s.armed = False; s.align = None; s.done = False
         s.create_subscription(TFMessage, "/ground_truth/pose_info", lambda m: setattr(s, "gt", m.transforms[0].transform.translation), 10)
         s.create_subscription(Odometry, "/ov_msckf/odomimu", s.on_ov, 10)
