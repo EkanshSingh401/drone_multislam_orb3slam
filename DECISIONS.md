@@ -214,3 +214,14 @@ Decisions made without the user, each with what / why / alternatives.
   watchdog cut the motors at 1.6 m) while I was running heavy offline jobs in the same container.
   OpenVINS showed no processing lag (3 ms behind), so starvation is not indicated, but from here on no
   heavy offline jobs run during flights. The flight is kept and reported (failures count).
+- **Step 4a static test dropped as evidence**: the static recording is dominated by ground-contact
+  jitter (and had a duplicate /camera/imu publisher from an orphaned imu_restamp left by the flight
+  I killed to pause the batch). The in-flight long-span test (3 flights) is the 4a evidence. Pausing a
+  batch by killing it mid-bringup left an orphan: next time pause between flights only.
+- **Step 4c diagnostic replays at track_frequency 5** are diagnostics, not a fix; nothing adopted. They
+  are not noise inflation either, but changing the system rate is the user's call (needs real-D455
+  data first).
+- **Step 6 skipped by its condition**: step 4 identified the cause (correlated vision errors at the
+  system frame rate) but adopted no fix, so orientation NEES is not back to frontier-like ~4 for the
+  pose-objective planners; comparing planners in the office on an estimator known to be overconfident
+  in exactly the slow-motion regime those planners induce would not be interpretable.
